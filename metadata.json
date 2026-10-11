@@ -1,0 +1,7 @@
+{
+  "name": "Vanshika Chawla — hello, stranger.",
+  "description": "An autobiographical memory archive and digital diary by Vanshika Chawla: editorial magazine, tactile scrapbook, and star constellation with real-time admin portal.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+

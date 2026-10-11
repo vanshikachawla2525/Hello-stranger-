@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en" data-theme="hero">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function() {
+        try {
+          var _rawFetch = window.fetch;
+          var _boundFetch = _rawFetch ? function() { return _rawFetch.apply(window, arguments); } : undefined;
+          Object.defineProperty(window, 'fetch', {
+            get: function() {
+              return _boundFetch;
+            },
+            set: function(val) {
+              _boundFetch = val;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        } catch (e) {}
+
+        window.addEventListener('error', function(e) {
+          if (e && e.message && e.message.indexOf('fetch') !== -1) {
+            e.preventDefault();
+            e.stopPropagation();
+            return true;
+          }
+        }, true);
+      })();
+    </script>
+    <title>Vanshika Chawla — hello, stranger.</title>
+    <meta name="description" content="An autobiographical memory archive and digital diary by Vanshika Chawla: editorial magazine, tactile scrapbook, and star constellation with real-time admin portal." />
+    <meta property="og:title" content="Vanshika Chawla — hello, stranger." />
+    <meta property="og:description" content="An autobiographical memory archive and digital diary by Vanshika Chawla: editorial magazine, tactile scrapbook, and star constellation with real-time admin portal." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Abril+Fatface&family=Bevan&family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=Instrument+Serif:ital@0;1&family=Reenie+Beanie&family=Special+Elite&display=swap" rel="stylesheet">
+    <link id="favicon-link" rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='14' fill='%23B3342B'/></svg>" />
+  </head>
+  <body class="selection:bg-[#D9CFBC]/60 selection:text-[#1B1713] antialiased overflow-x-hidden">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+

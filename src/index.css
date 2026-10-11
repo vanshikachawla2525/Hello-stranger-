@@ -1,0 +1,225 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --bg: #EFE8DA;
+    --ink: #1B1713;
+    --muted: #7A7064;
+    --accent: #B3342B;
+    --accent2: #D9CFBC;
+    --line: rgba(27, 23, 19, 0.12);
+    --seam-pos: 38%;
+  }
+
+  [data-theme="hero"] {
+    --bg: #EFE8DA;
+    --ink: #1B1713;
+    --muted: #7A7064;
+    --accent: #B3342B;
+    --accent2: #D9CFBC;
+    --line: rgba(27, 23, 19, 0.12);
+  }
+
+  [data-theme="scrap"] {
+    --bg: #F4EBD6;
+    --ink: #2A1E18;
+    --muted: #7C6A58;
+    --accent: #C8322B;
+    --accent2: #E9D9A6;
+    --line: rgba(42, 30, 24, 0.14);
+  }
+
+  [data-theme="drafts"] {
+    --bg: #F6F0E4;
+    --ink: #3A3834;
+    --muted: #8A7B6C;
+    --accent: #6B5444;
+    --accent2: #D9CDB8;
+    --line: rgba(58, 56, 52, 0.12);
+  }
+
+  [data-theme="archive"] {
+    --bg: #F3E6D0;
+    --ink: #4A3527;
+    --muted: #8C6F58;
+    --accent: #D49A5A;
+    --accent2: #EBC3A0;
+    --line: rgba(74, 53, 39, 0.14);
+  }
+
+  [data-theme="beas"], [data-theme="orbit"] {
+    --bg: #0E1A33;
+    --ink: #F2EAD8;
+    --muted: #A9A28F;
+    --accent: #C9A45C;
+    --accent2: #16264A;
+    --line: rgba(242, 234, 216, 0.16);
+  }
+
+  [data-theme="sage"] {
+    --bg: #A9B89A;
+    --ink: #2F3F2A;
+    --muted: #4E6045;
+    --accent: #F0CF65;
+    --accent2: #F5F0DF;
+    --line: rgba(47, 63, 42, 0.15);
+  }
+
+  [data-theme="proud"] {
+    --bg: #0D0C0C;
+    --ink: #EFEBE3;
+    --muted: #8A857D;
+    --accent: #6E1F2A;
+    --accent2: #2A2626;
+    --line: rgba(239, 235, 227, 0.16);
+  }
+
+  [data-theme="observatory"] {
+    --bg: #060C24;
+    --ink: #F4F6FB;
+    --muted: #8E9AC4;
+    --accent: #2F6BFF;
+    --accent2: #14204A;
+    --line: rgba(244, 246, 251, 0.15);
+  }
+
+  [data-theme="terracotta"] {
+    --bg: #C0643F;
+    --ink: #F6EADB;
+    --muted: #F0C9B6;
+    --accent: #D9A19A;
+    --accent2: #3B1D14;
+    --line: rgba(246, 234, 219, 0.2);
+  }
+
+  [data-theme="sky"] {
+    --bg: #8FC4E8;
+    --ink: #1F3A52;
+    --muted: #3F6786;
+    --accent: #F08A3C;
+    --accent2: #FBF3E3;
+    --line: rgba(31, 58, 82, 0.16);
+  }
+
+  [data-theme="letters"] {
+    --bg: #2A1812;
+    --ink: #E9D9B8;
+    --muted: #B49E7C;
+    --accent: #7A2230;
+    --accent2: #3A241B;
+    --line: rgba(233, 217, 184, 0.16);
+  }
+
+  [data-theme="rest"] {
+    --bg: #F7F2E9;
+    --ink: #2A2622;
+    --muted: #8B8379;
+    --accent: #2A2622;
+    --accent2: #E8E0D2;
+    --line: rgba(42, 38, 34, 0.12);
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--ink);
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    transition: background-color 700ms cubic-bezier(0.22, 1, 0.36, 1), color 700ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+.font-serif {
+  font-family: 'Instrument Serif', Georgia, serif;
+}
+
+.font-handwriting {
+  font-family: 'Reenie Beanie', cursive;
+}
+
+.font-typewriter {
+  font-family: 'Special Elite', monospace;
+}
+
+.font-cutout-fatface {
+  font-family: 'Abril Fatface', serif;
+}
+
+.font-cutout-bevan {
+  font-family: 'Bevan', serif;
+}
+
+.font-courier {
+  font-family: 'Courier Prime', monospace;
+}
+
+/* Fluid responsive type helpers */
+.text-hero-fluid {
+  font-size: clamp(3.5rem, 11vw, 12rem);
+  line-height: 0.88;
+  letter-spacing: -0.03em;
+}
+
+.text-h1-fluid {
+  font-size: clamp(2.5rem, 6.5vw, 6.5rem);
+  line-height: 0.95;
+  letter-spacing: -0.02em;
+}
+
+.text-h2-fluid {
+  font-size: clamp(1.75rem, 4vw, 4rem);
+  line-height: 1.05;
+  letter-spacing: -0.015em;
+}
+
+.text-quote-fluid {
+  font-size: clamp(1.5rem, 3.5vw, 3.5rem);
+  line-height: 1.15;
+}
+
+/* Gingham patterns */
+.bg-gingham {
+  background-color: #F4EBD6;
+  background-image: 
+    linear-gradient(45deg, rgba(200, 50, 43, 0.25) 25%, transparent 25%), 
+    linear-gradient(-45deg, rgba(200, 50, 43, 0.25) 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, rgba(200, 50, 43, 0.25) 75%), 
+    linear-gradient(-45deg, transparent 75%, rgba(200, 50, 43, 0.25) 75%);
+  background-size: 20px 20px;
+}
+
+.bg-gingham-red {
+  background-color: #FDF9F0;
+  background-image:
+    repeating-linear-gradient(0deg, rgba(200, 50, 43, 0.28) 0px, rgba(200, 50, 43, 0.28) 10px, transparent 10px, transparent 20px),
+    repeating-linear-gradient(90deg, rgba(200, 50, 43, 0.28) 0px, rgba(200, 50, 43, 0.28) 10px, transparent 10px, transparent 20px);
+}
+
+.bg-graph-paper {
+  background-size: 16px 16px;
+  background-image: 
+    linear-gradient(to right, rgba(207, 198, 176, 0.5) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(207, 198, 176, 0.5) 1px, transparent 1px);
+}
+
+/* Washi tape look */
+.washi-tape {
+  background-color: rgba(233, 217, 166, 0.85);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  backdrop-filter: blur(1px);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted);
+}
+
