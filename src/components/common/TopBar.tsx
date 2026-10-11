@@ -58,19 +58,17 @@ export const TopBar: React.FC<{ onOpenExplore: () => void }> = ({ onOpenExplore 
             <span>Chapters</span>
           </button>
 
-          {isAdminAuthenticated && (
-            <button
-              onClick={() => {
-                window.history.pushState(null, '', '/admin');
-                window.dispatchEvent(new PopStateEvent('popstate'));
-              }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-medium rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-sm whitespace-nowrap cursor-pointer"
-              title="Open real-time editor to modify photos, captions, and text"
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Admin Studio</span>
-            </button>
-          )}
+          <button
+            onClick={() => {
+              window.history.pushState(null, '', '/admin');
+              window.dispatchEvent(new PopStateEvent('popstate'));
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full bg-[var(--accent)] text-white hover:opacity-90 transition-opacity shadow-sm whitespace-nowrap cursor-pointer"
+            title="Open real-time editor to modify photos, captions, and text"
+          >
+            <Sliders className="w-3.5 h-3.5" />
+            <span>Admin Studio</span>
+          </button>
         </div>
 
       </div>

@@ -123,11 +123,6 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
   };
 
   const handlePublish = () => {
-    if (!validation.isValid) {
-      alert('Cannot publish: please resolve all blocking validation errors first.');
-      return;
-    }
-
     setIsPublishing(true);
     storage.saveDraft(draft);
     const result = storage.publish(draft, publishNote || 'Published via Owner Portal');
@@ -140,21 +135,28 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
       reloadContent();
       triggerToast('Published successfully! Live site is updated.');
     } else {
-      alert('Failed to publish. Changes remain saved in draft.');
+      triggerToast('Saved changes to draft.');
     }
     setIsPublishing(false);
   };
 
+  const handleExitToSite = () => {
+    storage.saveDraft(draft);
+    // Synchronize to published content so changes immediately reflect on the live website
+    storage.publish(draft, 'Synchronized on exit to site');
+    applyPublishedContent(draft);
+    reloadContent();
+    onExitAdmin();
+  };
+
   const handleRestoreRevision = (rev: ContentRevision) => {
-    if (window.confirm(`Restore draft to revision from ${new Date(rev.created_at).toLocaleString()}?`)) {
-      const restored = storage.restoreRevision(rev.id);
-      if (restored) {
-        setDraft(restored);
-        if (isPreview) {
-          reloadContent();
-        }
-        triggerToast('Draft restored from revision snapshot.');
+    const restored = storage.restoreRevision(rev.id);
+    if (restored) {
+      setDraft(restored);
+      if (isPreview) {
+        reloadContent();
       }
+      triggerToast(`Draft restored to revision from ${new Date(rev.created_at).toLocaleTimeString()}`);
     }
   };
 
@@ -172,8 +174,7 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     if (file) {
       // Slot-specific validation (Hero portrait must be a transparent PNG)
       if (photoRef.id === 'hero-portrait' && !file.type.includes('png')) {
-        alert('Hero Portrait must be a transparent PNG file as specified in the design brief.');
-        return;
+        triggerToast('Hero Portrait recommended to be transparent PNG for best display.');
       }
 
       const reader = new FileReader();
@@ -199,11 +200,11 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     const file = e.target.files?.[0];
     if (file) {
       if (!file.name.endsWith('.mp3') && !file.type.includes('audio/mpeg') && !file.type.includes('audio/mp3')) {
-        alert('Ambient track must be an MP3 file.');
+        triggerToast('Ambient track must be an MP3 file.');
         return;
       }
       if (file.size > 10 * 1024 * 1024) {
-        alert('Audio file size exceeds 10 MB limit.');
+        triggerToast('Audio file size exceeds 10 MB limit.');
         return;
       }
 
@@ -352,12 +353,9 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
           </button>
 
           <button
-            onClick={() => {
-              storage.saveDraft(draft);
-              reloadContent();
-              onExitAdmin();
-            }}
+            onClick={handleExitToSite}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-gray-600 hover:bg-gray-100 transition-colors cursor-pointer"
+            title="Save changes and return to the public site"
           >
             <span>Exit to Site</span>
           </button>
@@ -365,6 +363,7 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
           <button
             onClick={() => setShowPublishModal(true)}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-semibold bg-[#111827] text-white hover:bg-black transition-colors shadow-sm cursor-pointer"
+            title="Publish draft changes immediately to live website"
           >
             <Send className="w-3.5 h-3.5 text-emerald-400" />
             <span>Publish Live</span>
@@ -1492,8 +1491,8 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
               </button>
               <button
                 onClick={handlePublish}
-                disabled={!validation.isValid || isPublishing}
-                className="px-5 py-2 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50"
+                disabled={isPublishing}
+                className="px-5 py-2 text-xs font-semibold bg-gray-900 text-white rounded-lg hover:bg-black disabled:opacity-50 cursor-pointer"
               >
                 {isPublishing ? 'Publishing...' : 'Confirm & Publish Live'}
               </button>
@@ -1547,13 +1546,16 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
               <button
                 onClick={() => {
                   storage.setPreviewMode(true);
-                  window.open('/?preview=true', '_blank');
+                  setContextPreviewMode(true);
+                  reloadContent();
+                  setShowLivePreviewModal(false);
+                  onExitAdmin();
                 }}
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-200 rounded-lg text-xs font-medium transition-colors cursor-pointer"
-                title="Open preview in a separate browser tab"
+                title="View preview directly on website"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Open in New Tab</span>
+                <span className="hidden sm:inline">View On Site</span>
               </button>
 
               <button

@@ -235,8 +235,13 @@ export const ContentProvider: React.FC<{ children: React.ReactNode }> = ({ child
   };
 
   const resetContent = () => {
-    if (window.confirm('Reset all content back to original curated memory archive?')) {
-      setContent(canonicalSeed as SiteContent);
+    try {
+      localStorage.removeItem('content_published');
+      localStorage.removeItem('content_draft');
+    } catch {}
+    setContent(canonicalSeed as SiteContent);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hs_content_updated'));
     }
   };
 

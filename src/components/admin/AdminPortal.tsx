@@ -211,7 +211,7 @@ export const AdminPortal: React.FC = () => {
                       if (importContent(text)) {
                         triggerToast('Content imported successfully!');
                       } else {
-                        alert('Invalid JSON file format.');
+                        triggerToast('Invalid JSON file format.');
                       }
                     };
                     reader.readAsText(file);

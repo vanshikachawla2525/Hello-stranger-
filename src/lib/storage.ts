@@ -54,28 +54,34 @@ function deepMerge<T extends Record<string, any>>(target: T, source: any): T {
 }
 
 export const storage = {
-  // Read published content (used by live site with fallback to seed)
+  // Read published content (used by live site with fallback to draft or seed)
   getPublished(): SiteContent {
     try {
       const saved = localStorage.getItem(PUBLISHED_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        const merged = deepMerge(clone(seedContent as SiteContent), parsed);
-        const validation = SiteContentZodSchema.safeParse(merged);
-        if (validation.success) {
+        if (parsed && typeof parsed === 'object') {
+          const merged = deepMerge(clone(seedContent as SiteContent), parsed);
           return merged;
-        }
-        console.warn('Published document in storage failed schema validation, checking last good revision:', validation.error);
-        const revisions = this.getRevisions();
-        for (const rev of revisions) {
-          if (rev.snapshot && SiteContentZodSchema.safeParse(rev.snapshot).success) {
-            return clone(rev.snapshot);
-          }
         }
       }
     } catch (e) {
-      console.warn('Storage read failed, falling back to canonical content:', e);
+      console.warn('Storage read of published content failed:', e);
     }
+
+    // If published document is not yet saved, check if a draft exists
+    try {
+      const draftSaved = localStorage.getItem(DRAFT_KEY);
+      if (draftSaved) {
+        const parsedDraft = JSON.parse(draftSaved);
+        if (parsedDraft && typeof parsedDraft === 'object') {
+          return deepMerge(clone(seedContent as SiteContent), parsedDraft);
+        }
+      }
+    } catch (e) {
+      console.warn('Storage read of draft fallback failed:', e);
+    }
+
     return clone(seedContent as SiteContent);
   },
 
