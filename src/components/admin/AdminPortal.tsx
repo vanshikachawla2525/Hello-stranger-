@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useContent } from '../../context/ContentContext';
 import { Photo } from '../../types/content';
+import { supabaseService } from '../../lib/supabase';
 import {
   X,
   Camera,
@@ -131,18 +132,28 @@ export const AdminPortal: React.FC = () => {
     });
   }, [allPhotos, photoSectionFilter, searchQuery]);
 
-  const handleFileUpload = (photoId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (photoId: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (loadEvent) => {
-        const result = loadEvent.target?.result as string;
-        if (result) {
-          updatePhoto(photoId, { file: result });
-          triggerToast('Photo updated from upload!');
+    if (!file) return;
+
+    if (supabaseService.isConfigured()) {
+      triggerToast(`Uploading ${file.name} to Supabase Storage...`);
+      try {
+        const { url, error } = await supabaseService.uploadPhoto(file, photoId);
+        if (url) {
+          updatePhoto(photoId, { file: url });
+          triggerToast('Photo uploaded to Supabase Storage!');
+        } else {
+          triggerToast(`Upload failed: ${error || 'Unknown error'}`);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        triggerToast(`Upload error: ${err?.message || err}`);
+      } finally {
+        e.target.value = '';
+      }
+    } else {
+      triggerToast('Supabase not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to store photos in Storage.');
+      e.target.value = '';
     }
   };
 

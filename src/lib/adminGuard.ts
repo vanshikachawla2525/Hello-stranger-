@@ -1,10 +1,10 @@
 /**
  * Route protection specification for /admin
- * Requests to /admin and /api/admin must verify owner authentication.
+ * Requests to /admin must verify owner authentication.
  * Unauthenticated requests receive 404 Not Found to prevent discovery.
  */
-export function adminMiddleware(pathname: string, isAuthenticated: boolean) {
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
+export function adminGuard(pathname: string, isAuthenticated: boolean) {
+  if (pathname.startsWith('/admin')) {
     if (!isAuthenticated) {
       return { status: 404, message: "this page wasn't saved." };
     }
@@ -12,3 +12,5 @@ export function adminMiddleware(pathname: string, isAuthenticated: boolean) {
   }
   return { status: 200, allowed: true };
 }
+
+export const adminMiddleware = adminGuard;

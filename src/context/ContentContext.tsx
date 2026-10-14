@@ -61,6 +61,25 @@ export const ContentProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setContent(JSON.parse(JSON.stringify(newContent)));
   }, []);
 
+  // Fetch published row from Supabase on load (falling back to built-in seed content)
+  useEffect(() => {
+    let isMounted = true;
+    async function loadRemoteContent() {
+      try {
+        const remote = await storage.fetchPublishedAsync();
+        if (isMounted && remote && !storage.isPreviewMode()) {
+          setContent(remote);
+        }
+      } catch (err) {
+        console.warn('Could not fetch published content from Supabase on load:', err);
+      }
+    }
+    loadRemoteContent();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   // Sync content with storage events and custom pub/sub events
   useEffect(() => {
     const handleSync = () => {

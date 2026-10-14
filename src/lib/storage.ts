@@ -1,6 +1,7 @@
 import { content as seedContent } from '../content/content';
 import { SiteContent } from '../types/content';
 import { SiteContentZodSchema } from '../content/schema';
+import { supabaseService } from './supabase';
 
 export type ContentRevision = {
   id: string;
@@ -54,15 +55,14 @@ function deepMerge<T extends Record<string, any>>(target: T, source: any): T {
 }
 
 export const storage = {
-  // Read published content (used by live site with fallback to draft or seed)
+  // Synchronous read of published content (used on initial render, cached in localStorage with seed fallback)
   getPublished(): SiteContent {
     try {
       const saved = localStorage.getItem(PUBLISHED_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
-          const merged = deepMerge(clone(seedContent as SiteContent), parsed);
-          return merged;
+          return deepMerge(clone(seedContent as SiteContent), parsed);
         }
       }
     } catch (e) {
@@ -83,6 +83,25 @@ export const storage = {
     }
 
     return clone(seedContent as SiteContent);
+  },
+
+  // Asynchronous fetch from Supabase 'content' table (falls back to local cache/seed)
+  async fetchPublishedAsync(): Promise<SiteContent> {
+    if (supabaseService.isConfigured()) {
+      try {
+        const remote = await supabaseService.fetchPublishedContent();
+        if (remote && typeof remote === 'object') {
+          const merged = deepMerge(clone(seedContent as SiteContent), remote);
+          try {
+            localStorage.setItem(PUBLISHED_KEY, JSON.stringify(merged));
+          } catch {}
+          return merged;
+        }
+      } catch (e) {
+        console.warn('Failed to fetch published content from Supabase:', e);
+      }
+    }
+    return this.getPublished();
   },
 
   // Read draft content (used by admin editor)
@@ -219,29 +238,29 @@ export const storage = {
     return copy;
   },
 
-  // Get field-level diff between two versions
+  // Calculate field differences between previous published and current draft
   getDiff(prev: SiteContent, curr: SiteContent): FieldDiff[] {
     const diffs: FieldDiff[] = [];
 
     const compare = (o1: any, o2: any, path: string) => {
+      if (o1 === o2) return;
       if (typeof o1 !== typeof o2) {
-        diffs.push({
-          path,
-          oldValue: String(o1 ?? ''),
-          newValue: String(o2 ?? ''),
-        });
+        diffs.push({ path, oldValue: String(o1), newValue: String(o2) });
         return;
       }
-
-      if (typeof o1 === 'string' || typeof o1 === 'number' || typeof o1 === 'boolean') {
-        if (o1 !== o2) {
+      if (typeof o1 !== 'object' || o1 === null || o2 === null) {
+        diffs.push({ path, oldValue: String(o1), newValue: String(o2) });
+        return;
+      }
+      if (Array.isArray(o1) || Array.isArray(o2)) {
+        if (!Array.isArray(o1) || !Array.isArray(o2)) {
           diffs.push({
             path,
-            oldValue: String(o1),
-            newValue: String(o2),
+            oldValue: Array.isArray(o1) ? `Array(${o1.length})` : String(o1),
+            newValue: Array.isArray(o2) ? `Array(${o2.length})` : String(o2),
           });
+          return;
         }
-      } else if (Array.isArray(o1) && Array.isArray(o2)) {
         if (o1.length !== o2.length) {
           diffs.push({
             path: `${path}.length`,
@@ -263,8 +282,11 @@ export const storage = {
     return diffs;
   },
 
-  // Publish draft to live site and record revision snapshot
-  publish(content: SiteContent, note = 'Published update'): { success: boolean; revisionId: string } {
+  // Publish draft: writes to Supabase 'content' table (with fallback to local storage) and records revision
+  async publish(
+    content: SiteContent,
+    note = 'Published update'
+  ): Promise<{ success: boolean; revisionId: string; error?: string; remoteSaved: boolean }> {
     try {
       const currentPublished = this.getPublished();
       const diffs = this.getDiff(currentPublished, content);
@@ -279,26 +301,47 @@ export const storage = {
         changesSummary: changesSummary.length > 0 ? changesSummary : ['Minor adjustments'],
       };
 
-      // Save revision history (keep last 50)
+      // 1. Write to Supabase 'content' table if configured
+      let remoteSaved = false;
+      let remoteError: string | undefined;
+
+      if (supabaseService.isConfigured()) {
+        const remoteRes = await supabaseService.publishContent(content, note);
+        if (remoteRes.success) {
+          remoteSaved = true;
+        } else {
+          remoteError = remoteRes.error;
+          console.error('Failed to write published content to Supabase:', remoteRes.error);
+        }
+      }
+
+      // 2. Save revision history locally (keep last 50)
       const existingRevisions = this.getRevisions();
       const updatedRevisions = [newRevision, ...existingRevisions].slice(0, 50);
-      localStorage.setItem(REVISIONS_KEY, JSON.stringify(updatedRevisions));
+      try {
+        localStorage.setItem(REVISIONS_KEY, JSON.stringify(updatedRevisions));
+      } catch {}
 
-      // Update published document
-      localStorage.setItem(PUBLISHED_KEY, JSON.stringify(content));
-
-      // Clear draft to match published
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(content));
+      // 3. Update local published cache and draft
+      try {
+        localStorage.setItem(PUBLISHED_KEY, JSON.stringify(content));
+        localStorage.setItem(DRAFT_KEY, JSON.stringify(content));
+      } catch {}
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('hs_content_published', { detail: content }));
         window.dispatchEvent(new CustomEvent('hs_content_updated', { detail: content }));
       }
 
-      return { success: true, revisionId };
-    } catch (e) {
+      return {
+        success: true,
+        revisionId,
+        error: remoteError,
+        remoteSaved,
+      };
+    } catch (e: any) {
       console.error('Publish failed:', e);
-      return { success: false, revisionId: '' };
+      return { success: false, revisionId: '', error: e?.message || 'Publish failed', remoteSaved: false };
     }
   },
 

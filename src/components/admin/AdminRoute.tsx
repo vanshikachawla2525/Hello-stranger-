@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { adminAuth } from '../../lib/adminAuth';
 import { AdminDashboard } from './AdminDashboard';
-import { Lock, ArrowLeft, Key } from 'lucide-react';
+import { Lock } from 'lucide-react';
 
 export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSite }) => {
   const [isAuth, setIsAuth] = useState<boolean>(() => adminAuth.isAuthenticated());
@@ -10,15 +10,26 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
   const [secretInput, setSecretInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
 
-  const handleLoginSubmit = (e: React.FormEvent) => {
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsLoggingIn(true);
     setErrorMsg('');
-    const success = adminAuth.login(emailInput, secretInput);
-    if (success) {
-      setIsAuth(true);
-      setShowLoginModal(false);
-    } else {
-      setErrorMsg('Unauthorized credentials. Access denied.');
+    try {
+      const success = await adminAuth.login(emailInput, secretInput);
+      if (success) {
+        setIsAuth(true);
+        setShowLoginModal(false);
+        setEmailInput('');
+        setSecretInput('');
+      } else {
+        setErrorMsg('Unauthorized credentials. Access denied.');
+      }
+    } catch {
+      setErrorMsg('Login attempt failed. Please check credentials.');
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -27,8 +38,7 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
     return <AdminDashboard onExitAdmin={onBackToSite} />;
   }
 
-  // If unauthenticated: Return a 404 screen as required by Section 5:
-  // "Return a 404 (not a login redirect) to unauthenticated requests on /admin paths so it cannot be discovered by guessing."
+  // If unauthenticated: Return a 404 screen
   return (
     <div className="min-h-screen bg-[#EFE8DA] text-[#1B1713] flex flex-col items-center justify-center p-6 text-center select-none font-sans">
       <div className="max-w-md space-y-6">
@@ -51,8 +61,7 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
           </button>
           <button
             onClick={() => {
-              setEmailInput(adminAuth.getAdminEmail());
-              setSecretInput('vanshika1910');
+              setErrorMsg('');
               setShowLoginModal(true);
             }}
             className="px-5 py-2.5 rounded-full border border-[#1B1713]/20 text-[#1B1713] text-xs font-medium tracking-wide hover:bg-[#1B1713]/5 transition-colors flex items-center gap-1.5"
@@ -66,8 +75,7 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
         <div className="pt-12">
           <button
             onClick={() => {
-              setEmailInput(adminAuth.getAdminEmail());
-              setSecretInput('vanshika1910');
+              setErrorMsg('');
               setShowLoginModal(true);
             }}
             className="w-2.5 h-2.5 rounded-full bg-[#B3342B]/30 hover:bg-[#B3342B] transition-colors cursor-pointer"
@@ -127,25 +135,13 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
                 <p className="text-xs text-red-600 font-medium">{errorMsg}</p>
               )}
 
-              <div className="pt-2 space-y-2">
+              <div className="pt-2">
                 <button
                   type="submit"
-                  className="w-full py-2 bg-[#111827] text-white text-xs font-semibold rounded-lg hover:bg-black transition-colors"
+                  disabled={isLoggingIn}
+                  className="w-full py-2 bg-[#111827] text-white text-xs font-semibold rounded-lg hover:bg-black transition-colors disabled:opacity-50"
                 >
-                  Verify & Enter Portal
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const success = adminAuth.login(adminAuth.getAdminEmail(), 'vanshika1910');
-                    if (success) {
-                      setIsAuth(true);
-                      setShowLoginModal(false);
-                    }
-                  }}
-                  className="w-full py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
-                >
-                  One-Click Owner Access (Vanshika)
+                  {isLoggingIn ? 'Verifying...' : 'Verify & Enter Portal'}
                 </button>
               </div>
             </form>

@@ -1,9 +1,14 @@
+import { supabaseService } from './supabase';
+
 const ADMIN_AUTH_KEY = 'hs_admin_session_v1';
-export const DEFAULT_ADMIN_EMAIL = 'vanshikachawla2525@gmail.com';
 
 export const adminAuth = {
   getAdminEmail(): string {
-    return (import.meta as any).env?.VITE_ADMIN_EMAIL || DEFAULT_ADMIN_EMAIL;
+    return import.meta.env.VITE_ADMIN_EMAIL?.trim() || '';
+  },
+
+  getAdminPassphrase(): string {
+    return import.meta.env.VITE_ADMIN_PASSPHRASE || '';
   },
 
   isAuthenticated(): boolean {
@@ -17,12 +22,18 @@ export const adminAuth = {
     }
   },
 
-  login(email: string, secret: string): boolean {
+  async login(email: string, secret: string): Promise<boolean> {
     const validEmail = this.getAdminEmail().toLowerCase();
+    const validPassphrase = this.getAdminPassphrase();
     const inputEmail = email.trim().toLowerCase();
 
-    // The owner logs in with their verified email and personal key
-    if (inputEmail === validEmail && (secret === 'vanshika1910' || secret.length >= 6)) {
+    // No hardcoded secret or length bypass.
+    // Credentials must be defined via build-time env vars (no fallback defaults in code).
+    if (!validEmail || !validPassphrase) {
+      return false;
+    }
+
+    if (inputEmail === validEmail && secret === validPassphrase) {
       const session = {
         email: inputEmail,
         token: `adm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -31,6 +42,16 @@ export const adminAuth = {
       try {
         localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(session));
       } catch {}
+
+      // Authenticate with Supabase so Row-Level Security allows admin writes to 'content' and 'images' bucket
+      if (supabaseService.isConfigured()) {
+        try {
+          await supabaseService.signInAdmin(inputEmail, secret);
+        } catch (e) {
+          console.warn('Supabase auth sign-in warning:', e);
+        }
+      }
+
       return true;
     }
     return false;
@@ -40,5 +61,8 @@ export const adminAuth = {
     try {
       localStorage.removeItem(ADMIN_AUTH_KEY);
     } catch {}
+    if (supabaseService.isConfigured()) {
+      supabaseService.signOutAdmin().catch(() => {});
+    }
   },
 };

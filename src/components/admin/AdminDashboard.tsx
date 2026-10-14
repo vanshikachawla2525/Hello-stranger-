@@ -42,9 +42,11 @@ import {
   Monitor,
   Smartphone,
   ExternalLink,
+  Database,
 } from 'lucide-react';
 import { useContent } from '../../context/ContentContext';
 import { AdminChapterEditors } from './AdminChapterEditors';
+import { supabaseService } from '../../lib/supabase';
 
 export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAdmin }) => {
   const {
@@ -68,6 +70,22 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
   const [recentlyDeleted, setRecentlyDeleted] = useState<RecentlyDeletedItem[]>(() => storage.getRecentlyDeleted());
   const [isPreview, setIsPreview] = useState<boolean>(() => storage.isPreviewMode());
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [supabaseStatusMsg, setSupabaseStatusMsg] = useState<string | null>(null);
+  const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+
+  const handleTestSupabase = async () => {
+    setIsTestingSupabase(true);
+    try {
+      const res = await supabaseService.checkConnection();
+      setSupabaseStatusMsg(res.message);
+      triggerToast(res.connected ? 'Supabase connection verified!' : 'Supabase check complete.');
+    } catch (e: any) {
+      setSupabaseStatusMsg(e?.message || 'Error testing Supabase');
+      triggerToast('Error testing Supabase connection.');
+    } finally {
+      setIsTestingSupabase(false);
+    }
+  };
 
   // Media Library state
   const [mediaFilter, setMediaFilter] = useState<'all' | 'in-use' | 'unused'>('all');
@@ -122,10 +140,10 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     });
   };
 
-  const handlePublish = () => {
+  const handlePublish = async () => {
     setIsPublishing(true);
     storage.saveDraft(draft);
-    const result = storage.publish(draft, publishNote || 'Published via Owner Portal');
+    const result = await storage.publish(draft, publishNote || 'Published via Owner Portal');
     if (result.success) {
       setPublished(JSON.parse(JSON.stringify(draft)));
       setRevisions(storage.getRevisions());
@@ -133,17 +151,23 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
       setPublishNote('');
       applyPublishedContent(draft);
       reloadContent();
-      triggerToast('Published successfully! Live site is updated.');
+      if (result.remoteSaved) {
+        triggerToast('Published successfully to Supabase! Live site is updated.');
+      } else if (result.error) {
+        triggerToast(`Published locally, but Supabase write failed: ${result.error}`);
+      } else {
+        triggerToast('Published successfully! (Local storage cache updated; configure Supabase to sync remotely)');
+      }
     } else {
-      triggerToast('Saved changes to draft.');
+      triggerToast(`Publish failed: ${result.error || 'Unknown error'}`);
     }
     setIsPublishing(false);
   };
 
-  const handleExitToSite = () => {
+  const handleExitToSite = async () => {
     storage.saveDraft(draft);
     // Synchronize to published content so changes immediately reflect on the live website
-    storage.publish(draft, 'Synchronized on exit to site');
+    await storage.publish(draft, 'Synchronized on exit to site');
     applyPublishedContent(draft);
     reloadContent();
     onExitAdmin();
@@ -169,57 +193,77 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     triggerToast(next ? 'Preview mode ON: Public site will render draft' : 'Preview mode OFF: Public site renders published version');
   };
 
-  const handlePhotoUpload = (photoRef: Photo, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePhotoUpload = async (photoRef: Photo, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      // Slot-specific validation (Hero portrait must be a transparent PNG)
-      if (photoRef.id === 'hero-portrait' && !file.type.includes('png')) {
-        triggerToast('Hero Portrait recommended to be transparent PNG for best display.');
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = (loadEvent) => {
-        const result = loadEvent.target?.result as string;
-        if (result) {
-          photoRef.file = result;
+    // Slot-specific validation (Hero portrait must be a transparent PNG)
+    if (photoRef.id === 'hero-portrait' && !file.type.includes('png')) {
+      triggerToast('Hero Portrait recommended to be transparent PNG for best display.');
+    }
+
+    if (supabaseService.isConfigured()) {
+      triggerToast(`Uploading ${file.name} to Supabase Storage...`);
+      try {
+        const { url, error } = await supabaseService.uploadPhoto(file, photoRef.id);
+        if (url) {
+          photoRef.file = url;
           setDraft((prev) => {
             const next = { ...prev };
             storage.saveDraft(next);
             if (isPreview) reloadContent();
             return next;
           });
-          triggerToast('Photo updated!');
+          triggerToast('Photo uploaded to Supabase Storage!');
+        } else {
+          triggerToast(`Upload to Supabase Storage failed: ${error || 'Unknown error'}`);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        triggerToast(`Upload error: ${err?.message || err}`);
+      } finally {
+        e.target.value = '';
+      }
+    } else {
+      triggerToast('Supabase Storage not configured. Please add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to store photos in Supabase Storage.');
+      e.target.value = '';
     }
   };
 
   // Audio track handler (max 10MB, mp3 only)
-  const handleAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) {
-      if (!file.name.endsWith('.mp3') && !file.type.includes('audio/mpeg') && !file.type.includes('audio/mp3')) {
-        triggerToast('Ambient track must be an MP3 file.');
-        return;
-      }
-      if (file.size > 10 * 1024 * 1024) {
-        triggerToast('Audio file size exceeds 10 MB limit.');
-        return;
-      }
+    if (!file) return;
 
-      const reader = new FileReader();
-      reader.onload = (loadEvent) => {
-        const result = loadEvent.target?.result as string;
-        if (result) {
+    if (!file.name.endsWith('.mp3') && !file.type.includes('audio/mpeg') && !file.type.includes('audio/mp3')) {
+      triggerToast('Ambient track must be an MP3 file.');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      triggerToast('Audio file size exceeds 10 MB limit.');
+      return;
+    }
+
+    if (supabaseService.isConfigured()) {
+      triggerToast('Uploading audio to Supabase Storage...');
+      try {
+        const { url, error } = await supabaseService.uploadAudio(file);
+        if (url) {
           updateDraft((prev) => {
-            prev.audioTrack = { file: result, title: file.name };
+            prev.audioTrack = { file: url, title: file.name };
             return prev;
           });
-          triggerToast('Ambient audio track updated!');
+          triggerToast('Ambient audio track uploaded to Supabase Storage!');
+        } else {
+          triggerToast(`Audio upload failed: ${error || 'Unknown error'}`);
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        triggerToast(`Audio upload error: ${err?.message || err}`);
+      } finally {
+        e.target.value = '';
+      }
+    } else {
+      triggerToast('Supabase not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      e.target.value = '';
     }
   };
 
@@ -1228,8 +1272,12 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
                                   className="hidden"
                                 />
                               </label>
-                              <span className="text-[10px] text-gray-500">
-                                {photo.file.startsWith('data:') ? 'Custom Upload' : 'Built-in asset'}
+                              <span className="text-[10px] text-gray-500 font-mono">
+                                {photo.file.startsWith('http')
+                                  ? 'Cloud Storage'
+                                  : photo.file.startsWith('data:')
+                                  ? 'Local Upload'
+                                  : 'Built-in asset'}
                               </span>
                             </div>
                           </div>
@@ -1424,6 +1472,98 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
                       <p className="text-gray-500 text-[11px]">Authorized owner credential</p>
                     </div>
                     <span className="font-mono bg-white px-2 py-1 border rounded text-gray-800">{adminAuth.getAdminEmail()}</span>
+                  </div>
+
+                  {/* Supabase Hosted Backend & Storage Status */}
+                  <div className="p-5 bg-white rounded-xl border border-gray-300 shadow-xs space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Database className="w-4 h-4 text-emerald-600" />
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900">
+                          Supabase Backend & Storage
+                        </h4>
+                      </div>
+                      <span
+                        className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${
+                          supabaseService.isConfigured()
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}
+                      >
+                        {supabaseService.isConfigured() ? 'Configured' : 'Missing Env Vars'}
+                      </span>
+                    </div>
+
+                    <p className="text-gray-500 text-[11px] leading-relaxed">
+                      Published edits and uploaded photos sync directly to Supabase so changes are immediately visible to all visitors. Public visitors read the published JSON row on load with automatic fallback to built-in seed content. Uploaded photos are stored in the <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono">images</code> bucket with HTTPS URLs.
+                    </p>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
+                      <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                        <span className="text-gray-400 block font-semibold uppercase text-[10px]">Project URL</span>
+                        <span className="font-mono text-gray-800 truncate block">
+                          {supabaseService.getProjectUrl() || 'VITE_SUPABASE_URL not set'}
+                        </span>
+                      </div>
+                      <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
+                        <span className="text-gray-400 block font-semibold uppercase text-[10px]">Content Table & Storage</span>
+                        <span className="font-mono text-gray-800 block">
+                          Table: <strong className="text-gray-900">content</strong> · Bucket: <strong className="text-gray-900">images</strong>
+                        </span>
+                      </div>
+                    </div>
+
+                    {supabaseStatusMsg && (
+                      <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs text-gray-700">
+                        {supabaseStatusMsg}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <button
+                        onClick={handleTestSupabase}
+                        disabled={isTestingSupabase}
+                        className="px-3 py-1.5 bg-gray-900 text-white rounded text-xs font-medium hover:bg-black transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isTestingSupabase ? 'animate-spin' : ''}`} />
+                        <span>{isTestingSupabase ? 'Testing...' : 'Test Connection & Table'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(`-- 1. Create content table
+create table if not exists public.content (
+  id text primary key default 'published',
+  data jsonb not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now())
+);
+
+-- 2. Enable Row Level Security (RLS)
+alter table public.content enable row level security;
+
+-- 3. Public read policy
+create policy "Public can read published content"
+  on public.content for select to anon, authenticated using (true);
+
+-- 4. Authenticated admin write policy
+create policy "Authenticated admin can update content"
+  on public.content for all to authenticated using (true) with check (true);
+
+-- 5. Images storage bucket
+insert into storage.buckets (id, name, public) values ('images', 'images', true) on conflict (id) do update set public = true;
+
+create policy "Public can view images" on storage.objects for select to anon, authenticated using (bucket_id = 'images');
+create policy "Authenticated admin can upload images" on storage.objects for insert to authenticated with check (bucket_id = 'images');
+create policy "Authenticated admin can update images" on storage.objects for update to authenticated using (bucket_id = 'images');
+create policy "Authenticated admin can delete images" on storage.objects for delete to authenticated using (bucket_id = 'images');`);
+                          triggerToast('Supabase setup SQL copied to clipboard!');
+                        }}
+                        className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-gray-700"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>Copy Supabase Setup SQL</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
