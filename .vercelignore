@@ -1,0 +1,13 @@
+# Ignore any middleware files so Vercel never attempts to compile or deploy them as Serverless Functions
+middleware.js
+middleware.ts
+src/middleware.js
+src/middleware.ts
+**/middleware.js
+**/middleware.ts
+
+# Local environment and package locks
+bun.lock
+bun.lockb
+.env.local
+.env.*.local

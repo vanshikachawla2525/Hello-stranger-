@@ -2,11 +2,28 @@ process.env.VITE_CONFIG_NATIVE_IGNORE_WARNING = 'true';
 
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { defineConfig } from 'vite';
 
 const rootDir = fileURLToPath(new URL('.', import.meta.url));
+
+// Ensure no stray middleware files exist that Vercel could misinterpret as Serverless Functions
+const strayMiddlewarePaths = [
+  'middleware.js',
+  'middleware.ts',
+  'src/middleware.js',
+  'src/middleware.ts',
+];
+for (const rel of strayMiddlewarePaths) {
+  const target = path.resolve(rootDir, rel);
+  if (fs.existsSync(target)) {
+    try {
+      fs.unlinkSync(target);
+    } catch (_) {}
+  }
+}
 
 export default defineConfig(() => {
   return {
