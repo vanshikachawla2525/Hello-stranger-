@@ -72,6 +72,27 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [supabaseStatusMsg, setSupabaseStatusMsg] = useState<string | null>(null);
   const [isTestingSupabase, setIsTestingSupabase] = useState(false);
+  const [customSupabaseUrl, setCustomSupabaseUrl] = useState(() => supabaseService.getProjectUrl());
+  const [customSupabaseKey, setCustomSupabaseKey] = useState('');
+  const [showSupabaseConfig, setShowSupabaseConfig] = useState(false);
+
+  const handleSaveCustomSupabase = () => {
+    const res = supabaseService.setCustomCredentials(customSupabaseUrl, customSupabaseKey);
+    if (res.success) {
+      triggerToast('Custom Supabase credentials saved and active!');
+      setSupabaseStatusMsg('Custom credentials saved. Click "Test Connection" to verify.');
+    } else {
+      triggerToast(res.message || 'Failed to save credentials.');
+    }
+  };
+
+  const handleClearCustomSupabase = () => {
+    supabaseService.clearCustomCredentials();
+    setCustomSupabaseUrl('');
+    setCustomSupabaseKey('');
+    triggerToast('Custom credentials cleared. Using local storage fallback.');
+    setSupabaseStatusMsg(null);
+  };
 
   const handleTestSupabase = async () => {
     setIsTestingSupabase(true);
@@ -1490,19 +1511,21 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
                             : 'bg-amber-100 text-amber-800'
                         }`}
                       >
-                        {supabaseService.isConfigured() ? 'Configured' : 'Missing Env Vars'}
+                        {supabaseService.isConfigured() ? 'Connected' : 'Using Local Storage'}
                       </span>
                     </div>
 
                     <p className="text-gray-500 text-[11px] leading-relaxed">
-                      Published edits and uploaded photos sync directly to Supabase so changes are immediately visible to all visitors. Public visitors read the published JSON row on load with automatic fallback to built-in seed content. Uploaded photos are stored in the <code className="bg-gray-100 px-1 py-0.5 rounded text-gray-800 font-mono">images</code> bucket with HTTPS URLs.
+                      {supabaseService.isConfigured()
+                        ? 'Published edits and uploaded photos sync directly to Supabase so changes are immediately visible to all visitors across devices.'
+                        : 'Edits are saved directly to your browser storage. To enable cloud multi-device sync and image hosting, connect your free Supabase project below.'}
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
                       <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
                         <span className="text-gray-400 block font-semibold uppercase text-[10px]">Project URL</span>
                         <span className="font-mono text-gray-800 truncate block">
-                          {supabaseService.getProjectUrl() || 'VITE_SUPABASE_URL not set'}
+                          {supabaseService.getProjectUrl() || 'None (Local storage active)'}
                         </span>
                       </div>
                       <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-200">
@@ -1527,6 +1550,14 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
                       >
                         <RefreshCw className={`w-3 h-3 ${isTestingSupabase ? 'animate-spin' : ''}`} />
                         <span>{isTestingSupabase ? 'Testing...' : 'Test Connection & Table'}</span>
+                      </button>
+
+                      <button
+                        onClick={() => setShowSupabaseConfig(!showSupabaseConfig)}
+                        className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-gray-700"
+                      >
+                        <Settings className="w-3 h-3" />
+                        <span>{showSupabaseConfig ? 'Hide Settings' : 'Configure Supabase Keys'}</span>
                       </button>
 
                       <button
@@ -1564,6 +1595,49 @@ create policy "Authenticated admin can delete images" on storage.objects for del
                         <span>Copy Supabase Setup SQL</span>
                       </button>
                     </div>
+
+                    {showSupabaseConfig && (
+                      <div className="p-4 bg-gray-50 rounded-xl border border-gray-200 space-y-3 pt-3">
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block">
+                            Supabase Project URL
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="https://xyzabcdefg.supabase.co"
+                            value={customSupabaseUrl}
+                            onChange={(e) => setCustomSupabaseUrl(e.target.value)}
+                            className="w-full text-xs font-mono px-3 py-2 border border-gray-300 rounded focus:border-black focus:outline-hidden bg-white"
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold text-gray-700 uppercase tracking-wider block">
+                            Supabase Public Anon Key
+                          </label>
+                          <input
+                            type="password"
+                            placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                            value={customSupabaseKey}
+                            onChange={(e) => setCustomSupabaseKey(e.target.value)}
+                            className="w-full text-xs font-mono px-3 py-2 border border-gray-300 rounded focus:border-black focus:outline-hidden bg-white"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 pt-1">
+                          <button
+                            onClick={handleSaveCustomSupabase}
+                            className="px-3 py-1.5 bg-emerald-700 text-white rounded text-xs font-medium hover:bg-emerald-800 transition-colors"
+                          >
+                            Save & Activate
+                          </button>
+                          <button
+                            onClick={handleClearCustomSupabase}
+                            className="px-3 py-1.5 bg-white border border-gray-300 text-gray-700 rounded text-xs font-medium hover:bg-gray-100 transition-colors"
+                          >
+                            Clear
+                          </button>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>

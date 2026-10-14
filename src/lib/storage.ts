@@ -125,7 +125,7 @@ export const storage = {
         window.dispatchEvent(new CustomEvent('hs_draft_saved', { detail: content }));
       }
     } catch (e) {
-      console.error('Failed to save draft:', e);
+      console.warn('Draft save notice:', e);
     }
   },
 
@@ -154,7 +154,7 @@ export const storage = {
       };
       localStorage.setItem(RECENTLY_DELETED_KEY, JSON.stringify([newItem, ...current]));
     } catch (e) {
-      console.error('Failed to record deleted item:', e);
+      console.warn('Recently deleted record notice:', e);
     }
   },
 
@@ -306,12 +306,17 @@ export const storage = {
       let remoteError: string | undefined;
 
       if (supabaseService.isConfigured()) {
-        const remoteRes = await supabaseService.publishContent(content, note);
-        if (remoteRes.success) {
-          remoteSaved = true;
-        } else {
-          remoteError = remoteRes.error;
-          console.error('Failed to write published content to Supabase:', remoteRes.error);
+        try {
+          const remoteRes = await supabaseService.publishContent(content, note);
+          if (remoteRes.success) {
+            remoteSaved = true;
+          } else {
+            remoteError = remoteRes.error;
+            console.warn('Notice: Remote Supabase sync skipped or failed (local storage saved successfully):', remoteRes.error);
+          }
+        } catch (syncErr: any) {
+          remoteError = syncErr?.message || 'Remote sync failed';
+          console.warn('Notice: Remote Supabase sync exception (local storage saved successfully):', syncErr);
         }
       }
 
@@ -340,7 +345,7 @@ export const storage = {
         remoteSaved,
       };
     } catch (e: any) {
-      console.error('Publish failed:', e);
+      console.warn('Publish notice:', e);
       return { success: false, revisionId: '', error: e?.message || 'Publish failed', remoteSaved: false };
     }
   },

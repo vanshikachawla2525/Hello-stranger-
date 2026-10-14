@@ -282,7 +282,7 @@ export const ContentProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return true;
       }
     } catch (e) {
-      console.error(e);
+      console.warn('Import content parse notice:', e);
     }
     return false;
   };
