@@ -2,6 +2,35 @@
 <html lang="en" data-theme="hero">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      (function() {
+        try {
+          var settable = true;
+          try {
+            var orig = window.fetch;
+            window.fetch = orig;
+          } catch (_) {
+            settable = false;
+          }
+          if (!settable && typeof window !== 'undefined') {
+            var _cur = window.fetch ? window.fetch.bind(window) : null;
+            Object.defineProperty(window, 'fetch', {
+              get: function() { return _cur; },
+              set: function(val) { _cur = val; },
+              configurable: true,
+              enumerable: true
+            });
+          }
+          window.addEventListener('error', function(e) {
+            if (e && e.filename && e.filename.indexOf('chrome-extension://') !== -1) {
+              if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+              if (e.preventDefault) e.preventDefault();
+              return true;
+            }
+          }, true);
+        } catch (_) {}
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Vanshika Chawla — hello, stranger.</title>
     <meta name="description" content="An autobiographical memory archive and digital diary by Vanshika Chawla: editorial magazine, tactile scrapbook, and star constellation with real-time admin portal." />
