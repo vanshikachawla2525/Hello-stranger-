@@ -150,7 +150,6 @@ export const supabaseService = {
         .maybeSingle();
 
       if (error) {
-        console.warn('Supabase fetch notice for published content:', error.message);
         return null;
       }
 
@@ -158,8 +157,7 @@ export const supabaseService = {
         return data.data as SiteContent;
       }
       return null;
-    } catch (err) {
-      console.warn('Supabase fetch exception for published content:', err);
+    } catch {
       return null;
     }
   },
@@ -188,14 +186,26 @@ export const supabaseService = {
         .upsert(payload, { onConflict: 'id' });
 
       if (error) {
-        console.warn('Supabase write notice:', error.message || error);
-        return { success: false, error: error.message };
+        const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError') || errorMsg.includes('fetch')) {
+          return {
+            success: false,
+            error: 'Could not reach Supabase endpoint (offline or unreachable). Saved locally in browser.',
+          };
+        }
+        return { success: false, error: errorMsg };
       }
 
       return { success: true };
     } catch (err: any) {
-      console.warn('Supabase write exception:', err);
-      return { success: false, error: err?.message || 'Failed to publish to Supabase' };
+      const msg = err?.message || 'Remote sync failed';
+      if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
+        return {
+          success: false,
+          error: 'Could not reach Supabase endpoint (offline or unreachable). Saved locally in browser.',
+        };
+      }
+      return { success: false, error: msg };
     }
   },
 
@@ -225,8 +235,11 @@ export const supabaseService = {
         });
 
       if (error) {
-        console.warn('Supabase Storage upload notice:', error.message || error);
-        return { url: null, error: error.message };
+        const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        return {
+          url: null,
+          error: errorMsg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : errorMsg,
+        };
       }
 
       const { data: urlData } = activeClient.storage.from('images').getPublicUrl(data.path);
@@ -236,8 +249,11 @@ export const supabaseService = {
 
       return { url: urlData.publicUrl };
     } catch (err: any) {
-      console.warn('Supabase Storage upload exception:', err);
-      return { url: null, error: err?.message || 'Storage upload failed' };
+      const msg = err?.message || 'Storage upload failed';
+      return {
+        url: null,
+        error: msg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : msg,
+      };
     }
   },
 
@@ -263,15 +279,21 @@ export const supabaseService = {
         });
 
       if (error) {
-        console.warn('Supabase Storage audio upload notice:', error.message || error);
-        return { url: null, error: error.message };
+        const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        return {
+          url: null,
+          error: errorMsg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : errorMsg,
+        };
       }
 
       const { data: urlData } = activeClient.storage.from('images').getPublicUrl(data.path);
       return { url: urlData?.publicUrl || null };
     } catch (err: any) {
-      console.warn('Supabase Storage audio upload exception:', err);
-      return { url: null, error: err?.message || 'Audio upload failed' };
+      const msg = err?.message || 'Audio upload failed';
+      return {
+        url: null,
+        error: msg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : msg,
+      };
     }
   },
 
@@ -308,7 +330,6 @@ export const supabaseService = {
 
       return { success: false, error: error?.message || 'Supabase authentication failed' };
     } catch (err: any) {
-      console.warn('Supabase authentication notice:', err?.message || err);
       return { success: false, error: err?.message || 'Supabase authentication failed' };
     }
   },
@@ -350,12 +371,22 @@ export const supabaseService = {
       const authenticated = Boolean(authData?.session?.user);
 
       if (error) {
+        const errorMsg = error.message || String(error);
+        if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError')) {
+          return {
+            configured: true,
+            connected: false,
+            authenticated: false,
+            hasContent: false,
+            message: 'Could not connect to Supabase project. Check that your project URL is online and valid.',
+          };
+        }
         return {
           configured: true,
           connected: false,
           authenticated,
           hasContent: false,
-          message: `Connected to Supabase, but query on 'content' returned: ${error.message}. (Did you run the setup SQL?)`,
+          message: `Connected to Supabase, but query on 'content' returned: ${errorMsg}. (Did you run the setup SQL?)`,
         };
       }
 
@@ -369,12 +400,15 @@ export const supabaseService = {
           : "Connected to Supabase. 'content' table is ready, no published row yet (publish from Owner portal to create it).",
       };
     } catch (e: any) {
+      const errorMsg = e?.message || String(e);
       return {
         configured: true,
         connected: false,
         authenticated: false,
         hasContent: false,
-        message: `Network notice: ${e?.message || e}`,
+        message: errorMsg.includes('Failed to fetch')
+          ? 'Network error: Unable to reach Supabase project. Check project URL and network connectivity.'
+          : `Connection error: ${errorMsg}`,
       };
     }
   },

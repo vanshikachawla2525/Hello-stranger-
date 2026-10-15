@@ -23,17 +23,17 @@ export const adminAuth = {
   },
 
   async login(email: string, secret: string): Promise<boolean> {
-    const validEmail = this.getAdminEmail().toLowerCase();
-    const validPassphrase = this.getAdminPassphrase();
-    const inputEmail = email.trim().toLowerCase();
+    const validEmail = this.getAdminEmail().toLowerCase().trim();
+    const validPassphrase = this.getAdminPassphrase().trim();
+    const inputEmail = (email || '').trim().toLowerCase();
+    const inputSecret = (secret || '').trim();
 
-    // No hardcoded secret or length bypass.
     // Credentials must be defined via build-time env vars (no fallback defaults in code).
     if (!validEmail || !validPassphrase) {
       return false;
     }
 
-    if (inputEmail === validEmail && secret === validPassphrase) {
+    if (inputEmail === validEmail && inputSecret === validPassphrase) {
       const session = {
         email: inputEmail,
         token: `adm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
@@ -43,13 +43,11 @@ export const adminAuth = {
         localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(session));
       } catch {}
 
-      // Authenticate with Supabase so Row-Level Security allows admin writes to 'content' and 'images' bucket
+      // Attempt Supabase sign-in if configured, but never block local login
       if (supabaseService.isConfigured()) {
         try {
-          await supabaseService.signInAdmin(inputEmail, secret);
-        } catch (e) {
-          console.warn('Supabase auth sign-in warning:', e);
-        }
+          await supabaseService.signInAdmin(inputEmail, inputSecret);
+        } catch (_) {}
       }
 
       return true;

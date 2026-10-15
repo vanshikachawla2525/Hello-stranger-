@@ -175,9 +175,9 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
       if (result.remoteSaved) {
         triggerToast('Published successfully to Supabase! Live site is updated.');
       } else if (result.error) {
-        triggerToast(`Published locally, but Supabase write failed: ${result.error}`);
+        triggerToast(`Published locally! (${result.error})`);
       } else {
-        triggerToast('Published successfully! (Local storage cache updated; configure Supabase to sync remotely)');
+        triggerToast('Published successfully! (Saved locally in your browser)');
       }
     } else {
       triggerToast(`Publish failed: ${result.error || 'Unknown error'}`);

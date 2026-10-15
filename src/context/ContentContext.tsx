@@ -70,8 +70,8 @@ export const ContentProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (isMounted && remote && !storage.isPreviewMode()) {
           setContent(remote);
         }
-      } catch (err) {
-        console.warn('Could not fetch published content from Supabase on load:', err);
+      } catch (_) {
+        // Fall back gracefully to local content
       }
     }
     loadRemoteContent();

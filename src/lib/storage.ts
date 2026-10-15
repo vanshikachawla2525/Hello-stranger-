@@ -97,8 +97,8 @@ export const storage = {
           } catch {}
           return merged;
         }
-      } catch (e) {
-        console.warn('Failed to fetch published content from Supabase:', e);
+      } catch (_) {
+        // Fall back to local published cache silently
       }
     }
     return this.getPublished();
@@ -301,33 +301,13 @@ export const storage = {
         changesSummary: changesSummary.length > 0 ? changesSummary : ['Minor adjustments'],
       };
 
-      // 1. Write to Supabase 'content' table if configured
-      let remoteSaved = false;
-      let remoteError: string | undefined;
-
-      if (supabaseService.isConfigured()) {
-        try {
-          const remoteRes = await supabaseService.publishContent(content, note);
-          if (remoteRes.success) {
-            remoteSaved = true;
-          } else {
-            remoteError = remoteRes.error;
-            console.warn('Notice: Remote Supabase sync skipped or failed (local storage saved successfully):', remoteRes.error);
-          }
-        } catch (syncErr: any) {
-          remoteError = syncErr?.message || 'Remote sync failed';
-          console.warn('Notice: Remote Supabase sync exception (local storage saved successfully):', syncErr);
-        }
-      }
-
-      // 2. Save revision history locally (keep last 50)
+      // 1. Commit to local storage and revision history first
       const existingRevisions = this.getRevisions();
       const updatedRevisions = [newRevision, ...existingRevisions].slice(0, 50);
       try {
         localStorage.setItem(REVISIONS_KEY, JSON.stringify(updatedRevisions));
       } catch {}
 
-      // 3. Update local published cache and draft
       try {
         localStorage.setItem(PUBLISHED_KEY, JSON.stringify(content));
         localStorage.setItem(DRAFT_KEY, JSON.stringify(content));
@@ -338,6 +318,23 @@ export const storage = {
         window.dispatchEvent(new CustomEvent('hs_content_updated', { detail: content }));
       }
 
+      // 2. Write to Supabase 'content' table if configured
+      let remoteSaved = false;
+      let remoteError: string | undefined;
+
+      if (supabaseService.isConfigured()) {
+        try {
+          const remoteRes = await supabaseService.publishContent(content, note);
+          if (remoteRes.success) {
+            remoteSaved = true;
+          } else {
+            remoteError = remoteRes.error;
+          }
+        } catch (syncErr: any) {
+          remoteError = syncErr?.message || 'Remote sync failed';
+        }
+      }
+
       return {
         success: true,
         revisionId,
@@ -345,7 +342,6 @@ export const storage = {
         remoteSaved,
       };
     } catch (e: any) {
-      console.warn('Publish notice:', e);
       return { success: false, revisionId: '', error: e?.message || 'Publish failed', remoteSaved: false };
     }
   },
