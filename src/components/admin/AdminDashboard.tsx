@@ -90,8 +90,8 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     supabaseService.clearCustomCredentials();
     setCustomSupabaseUrl('');
     setCustomSupabaseKey('');
-    triggerToast('Custom credentials cleared. Using local storage fallback.');
-    setSupabaseStatusMsg(null);
+    triggerToast('Switched to local storage mode. Edits save directly to browser.');
+    setSupabaseStatusMsg('Local storage mode active. All edits and revisions save directly in your browser.');
   };
 
   const handleTestSupabase = async () => {
@@ -99,10 +99,10 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     try {
       const res = await supabaseService.checkConnection();
       setSupabaseStatusMsg(res.message);
-      triggerToast(res.connected ? 'Supabase connection verified!' : 'Supabase check complete.');
-    } catch (e: any) {
-      setSupabaseStatusMsg(e?.message || 'Error testing Supabase');
-      triggerToast('Error testing Supabase connection.');
+      triggerToast(res.connected ? 'Supabase cloud connection verified!' : 'Connection check complete.');
+    } catch {
+      setSupabaseStatusMsg('Unable to connect to Supabase. Check project URL and network status.');
+      triggerToast('Could not reach Supabase. Operating in local storage mode.');
     } finally {
       setIsTestingSupabase(false);
     }
@@ -118,6 +118,16 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3000);
   };
+
+  useEffect(() => {
+    const handleStorageToast = (e: any) => {
+      if (e.detail) {
+        triggerToast(e.detail);
+      }
+    };
+    window.addEventListener('hs_storage_toast', handleStorageToast);
+    return () => window.removeEventListener('hs_storage_toast', handleStorageToast);
+  }, []);
 
   // Auto-save draft changes every few seconds
   useEffect(() => {
@@ -173,11 +183,11 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
       applyPublishedContent(draft);
       reloadContent();
       if (result.remoteSaved) {
-        triggerToast('Published successfully to Supabase! Live site is updated.');
+        triggerToast('Published live to Supabase Cloud & Local Cache!');
       } else if (result.error) {
-        triggerToast(`Published locally! (${result.error})`);
+        triggerToast('Published to Local Storage. (Remote cloud sync offline/unconfigured)');
       } else {
-        triggerToast('Published successfully! (Saved locally in your browser)');
+        triggerToast('Published to Local Storage! Changes are active in this browser.');
       }
     } else {
       triggerToast(`Publish failed: ${result.error || 'Unknown error'}`);
@@ -1501,24 +1511,24 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
                       <div className="flex items-center gap-2">
                         <Database className="w-4 h-4 text-emerald-600" />
                         <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900">
-                          Supabase Backend & Storage
+                          Storage & Synchronization Mode
                         </h4>
                       </div>
                       <span
                         className={`text-[11px] px-2.5 py-0.5 rounded-full font-semibold ${
                           supabaseService.isConfigured()
                             ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
+                            : 'bg-blue-100 text-blue-800'
                         }`}
                       >
-                        {supabaseService.isConfigured() ? 'Connected' : 'Using Local Storage'}
+                        {supabaseService.isConfigured() ? 'Cloud Sync Active (Supabase)' : 'Local Browser Storage Mode'}
                       </span>
                     </div>
 
                     <p className="text-gray-500 text-[11px] leading-relaxed">
                       {supabaseService.isConfigured()
-                        ? 'Published edits and uploaded photos sync directly to Supabase so changes are immediately visible to all visitors across devices.'
-                        : 'Edits are saved directly to your browser storage. To enable cloud multi-device sync and image hosting, connect your free Supabase project below.'}
+                        ? 'Published edits and uploaded photos sync directly to Supabase and cache locally in this browser.'
+                        : 'Edits, snapshots, and drafts are safely stored directly in your browser. To enable multi-device cloud synchronization, connect your Supabase project below.'}
                     </p>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-[11px]">
@@ -1562,31 +1572,44 @@ export const AdminDashboard: React.FC<{ onExitAdmin: () => void }> = ({ onExitAd
 
                       <button
                         onClick={() => {
-                          navigator.clipboard.writeText(`-- 1. Create content table
-create table if not exists public.content (
-  id text primary key default 'published',
-  data jsonb not null,
-  updated_at timestamp with time zone default timezone('utc'::text, now())
-);
-
--- 2. Enable Row Level Security (RLS)
-alter table public.content enable row level security;
-
--- 3. Public read policy
-create policy "Public can read published content"
-  on public.content for select to anon, authenticated using (true);
-
--- 4. Authenticated admin write policy
-create policy "Authenticated admin can update content"
-  on public.content for all to authenticated using (true) with check (true);
-
--- 5. Images storage bucket
-insert into storage.buckets (id, name, public) values ('images', 'images', true) on conflict (id) do update set public = true;
-
-create policy "Public can view images" on storage.objects for select to anon, authenticated using (bucket_id = 'images');
-create policy "Authenticated admin can upload images" on storage.objects for insert to authenticated with check (bucket_id = 'images');
-create policy "Authenticated admin can update images" on storage.objects for update to authenticated using (bucket_id = 'images');
-create policy "Authenticated admin can delete images" on storage.objects for delete to authenticated using (bucket_id = 'images');`);
+                          const ownerEmail = adminAuth.getAdminEmail() || 'owner@example.com';
+                          const sql = [
+                            '-- 1. Create content table',
+                            'create table if not exists public.content (',
+                            "  id text primary key default 'published',",
+                            "  data jsonb not null default '{}'::jsonb,",
+                            "  updated_at timestamp with time zone default timezone('utc'::text, now())",
+                            ');',
+                            '',
+                            '-- 2. Seed row',
+                            "insert into public.content (id, data) values ('published', '{}'::jsonb) on conflict (id) do nothing;",
+                            '',
+                            '-- 3. Enable RLS',
+                            'alter table public.content enable row level security;',
+                            '',
+                            '-- 4. Public read policy',
+                            'drop policy if exists \"Public can read published content\" on public.content;',
+                            'create policy \"Public can read published content\" on public.content for select to anon, authenticated using (true);',
+                            '',
+                            '-- 5. Owner write policy',
+                            'drop policy if exists \"Owner can write content\" on public.content;',
+                            'drop policy if exists \"Authenticated admin can update content\" on public.content;',
+                            `create policy \"Owner can write content\" on public.content for all to authenticated using ((auth.jwt() ->> 'email') = '${ownerEmail}');`,
+                            '',
+                            '-- 6. Images storage bucket',
+                            "insert into storage.buckets (id, name, public) values ('images', 'images', true) on conflict (id) do update set public = true;",
+                            '',
+                            '-- 7. Storage RLS',
+                            'drop policy if exists \"Public can view images\" on storage.objects;',
+                            "create policy \"Public can view images\" on storage.objects for select to anon, authenticated using (bucket_id = 'images');",
+                            '',
+                            'drop policy if exists \"Owner can upload images\" on storage.objects;',
+                            `create policy \"Owner can upload images\" on storage.objects for insert to authenticated with check (bucket_id = 'images' and (auth.jwt() ->> 'email') = '${ownerEmail}');`,
+                            '',
+                            'drop policy if exists \"Owner can update or delete images\" on storage.objects;',
+                            `create policy \"Owner can update or delete images\" on storage.objects for all to authenticated using (bucket_id = 'images' and (auth.jwt() ->> 'email') = '${ownerEmail}');`
+                          ].join('\n');
+                          navigator.clipboard.writeText(sql);
                           triggerToast('Supabase setup SQL copied to clipboard!');
                         }}
                         className="px-3 py-1.5 bg-white border border-gray-300 rounded text-xs font-medium hover:bg-gray-50 transition-colors flex items-center gap-1.5 text-gray-700"
@@ -1681,6 +1704,27 @@ create policy "Authenticated admin can delete images" on storage.objects for del
               {validation.isValid
                 ? '✓ All validation rules satisfied (alt text, emoji check, count bounds).'
                 : '⚠ Validation errors present. Cannot publish.'}
+            </div>
+
+            {/* Target Destination Indicator */}
+            <div className="p-3 bg-gray-50 rounded-lg border border-gray-200 text-xs flex items-center justify-between">
+              <div>
+                <span className="font-semibold text-gray-800 block">Publish Target:</span>
+                <span className="text-[11px] text-gray-500">
+                  {supabaseService.isConfigured()
+                    ? 'Syncing to Supabase Cloud and local browser cache'
+                    : 'Saving directly to browser storage (offline-first)'}
+                </span>
+              </div>
+              <span
+                className={`text-[11px] px-2.5 py-1 rounded-full font-bold ${
+                  supabaseService.isConfigured()
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {supabaseService.isConfigured() ? 'Cloud + Local' : 'Local Storage'}
+              </span>
             </div>
 
             <div>

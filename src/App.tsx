@@ -13,6 +13,7 @@ import { Seam } from './components/common/Seam';
 import { ExplorePill } from './components/common/ExplorePill';
 import { RandomPill } from './components/common/RandomPill';
 import { AdminRoute } from './components/admin/AdminRoute';
+import { RootErrorBoundary } from './components/common/ErrorBoundary';
 
 import { Page0Hero } from './components/sections/Page0Hero';
 import { Page1NoBigDeal } from './components/sections/Page1NoBigDeal';
@@ -28,12 +29,37 @@ import { Page9OneDay } from './components/sections/Page9OneDay';
 import { Page10ToWhoeverIBecome } from './components/sections/Page10ToWhoeverIBecome';
 import { Page11StillBecoming } from './components/sections/Page11StillBecoming';
 
+const isAdminPath = (p: string) => /^\/admin\/?$/i.test(p);
+
 const MainApp: React.FC = () => {
   const [loaderDone, setLoaderDone] = useState(false);
   const [isExploreOpen, setIsExploreOpen] = useState(false);
   const [scrollPercentage, setScrollPercentage] = useState(0);
   const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
   const { content, setActiveTheme, isPreviewMode, reloadContent } = useContent();
+
+  // Normalize path: /admin/, /Admin -> silently replaceState to /admin
+  useEffect(() => {
+    if (isAdminPath(window.location.pathname) && window.location.pathname !== '/admin') {
+      window.history.replaceState(null, '', '/admin' + window.location.search);
+      setCurrentPath('/admin');
+    }
+  }, [currentPath]);
+
+  // Manage <meta name="robots" content="noindex"> only when path is /admin
+  useEffect(() => {
+    let meta = document.querySelector('meta[name="robots"]') as HTMLMetaElement | null;
+    if (isAdminPath(currentPath)) {
+      if (!meta) {
+        meta = document.createElement('meta');
+        meta.name = 'robots';
+        document.head.appendChild(meta);
+      }
+      meta.content = 'noindex';
+    } else if (meta) {
+      meta.remove();
+    }
+  }, [currentPath]);
 
   // Listen for preview query parameter in new tab / iframe
   useEffect(() => {
@@ -73,7 +99,7 @@ const MainApp: React.FC = () => {
 
   // Scroll listener to update progress & dynamic themes
   useEffect(() => {
-    if (currentPath === '/admin') return;
+    if (isAdminPath(currentPath)) return;
 
     const handleScroll = () => {
       const totalHeight = document.documentElement.scrollHeight - window.innerHeight;
@@ -113,10 +139,10 @@ const MainApp: React.FC = () => {
 
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
-  }, [currentPath, setActiveTheme]);
+  }, [currentPath, setActiveTheme, content.interludeBeas?.hidden]);
 
   // If URL path is /admin, render owner AdminRoute (which conceals behind 404 unless authenticated)
-  if (currentPath === '/admin') {
+  if (isAdminPath(currentPath)) {
     return (
       <AdminRoute
         onBackToSite={() => {
@@ -206,8 +232,10 @@ const MainApp: React.FC = () => {
 
 export default function App() {
   return (
-    <ContentProvider>
-      <MainApp />
-    </ContentProvider>
+    <RootErrorBoundary>
+      <ContentProvider>
+        <MainApp />
+      </ContentProvider>
+    </RootErrorBoundary>
   );
 }

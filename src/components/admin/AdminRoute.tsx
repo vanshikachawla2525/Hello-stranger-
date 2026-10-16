@@ -1,44 +1,83 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { adminAuth } from '../../lib/adminAuth';
 import { AdminDashboard } from './AdminDashboard';
+import { AdminErrorBoundary } from '../common/ErrorBoundary';
 import { Lock } from 'lucide-react';
 
 export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSite }) => {
-  const [isAuth, setIsAuth] = useState<boolean>(() => adminAuth.isAuthenticated());
+  const [isAuth, setIsAuth] = useState<boolean>(false);
+  const [isCheckingSession, setIsCheckingSession] = useState<boolean>(true);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [secretInput, setSecretInput] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
-
   const [isLoggingIn, setIsLoggingIn] = useState(false);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    // Check active Supabase session on mount
+    adminAuth.getSession().then((session) => {
+      if (isMounted) {
+        setIsAuth(Boolean(session));
+        setIsCheckingSession(false);
+      }
+    });
+
+    // Listen for auth state changes
+    const subscription = adminAuth.onAuthStateChange((authenticated) => {
+      if (isMounted) {
+        setIsAuth(authenticated);
+        setIsCheckingSession(false);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoggingIn(true);
     setErrorMsg('');
     try {
-      const success = await adminAuth.login(emailInput, secretInput);
-      if (success) {
+      const result = await adminAuth.login(emailInput, secretInput);
+      if (result.ok) {
         setIsAuth(true);
         setShowLoginModal(false);
         setEmailInput('');
         setSecretInput('');
       } else {
-        setErrorMsg('Unauthorized credentials. Access denied.');
+        setErrorMsg(result.message);
       }
     } catch {
-      setErrorMsg('Login attempt failed. Please check credentials.');
+      setErrorMsg('Login attempt failed. Please check your network and credentials.');
     } finally {
       setIsLoggingIn(false);
     }
   };
 
-  // If authenticated, render the full owner dashboard
-  if (isAuth) {
-    return <AdminDashboard onExitAdmin={onBackToSite} />;
+  // Minimal loading state while checking real Supabase session on mount
+  if (isCheckingSession) {
+    return (
+      <div className="min-h-screen bg-[#EFE8DA] text-[#7A7064] flex items-center justify-center font-mono text-xs select-none">
+        checking session…
+      </div>
+    );
   }
 
-  // If unauthenticated: Return a 404 screen
+  // If authenticated, render the full owner dashboard wrapped in AdminErrorBoundary
+  if (isAuth) {
+    return (
+      <AdminErrorBoundary onExitAdmin={onBackToSite}>
+        <AdminDashboard onExitAdmin={onBackToSite} />
+      </AdminErrorBoundary>
+    );
+  }
+
+  // If unauthenticated: Return 404 stealth screen
   return (
     <div className="min-h-screen bg-[#EFE8DA] text-[#1B1713] flex flex-col items-center justify-center p-6 text-center select-none font-sans">
       <div className="max-w-md space-y-6">
@@ -102,6 +141,12 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
               </button>
             </div>
 
+            {/* Diagnostic status line inside modal (never prints key values) */}
+            <div className="text-[10px] font-mono text-gray-500 bg-gray-50 p-2 rounded border border-gray-200 flex items-center justify-between">
+              <span>Supabase: {adminAuth.isSupabaseConfigured() ? 'configured ✓' : 'not configured ✗'}</span>
+              <span>Admin email: {adminAuth.getAdminEmail() ? 'set ✓' : 'not set ✗'}</span>
+            </div>
+
             <form onSubmit={handleLoginSubmit} className="space-y-3">
               <div>
                 <label className="block text-[11px] font-semibold text-gray-700 mb-1">
@@ -119,29 +164,31 @@ export const AdminRoute: React.FC<{ onBackToSite: () => void }> = ({ onBackToSit
 
               <div>
                 <label className="block text-[11px] font-semibold text-gray-700 mb-1">
-                  Passphrase / Key
+                  Password
                 </label>
                 <input
                   type="password"
                   value={secretInput}
                   onChange={(e) => setSecretInput(e.target.value)}
-                  placeholder="Security key..."
+                  placeholder="Supabase user password..."
                   required
                   className="w-full text-xs p-2.5 rounded-lg border border-gray-300 focus:outline-none focus:border-gray-900"
                 />
               </div>
 
               {errorMsg && (
-                <p className="text-xs text-red-600 font-medium">{errorMsg}</p>
+                <div className="p-2.5 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 leading-relaxed font-medium">
+                  {errorMsg}
+                </div>
               )}
 
               <div className="pt-2">
                 <button
                   type="submit"
                   disabled={isLoggingIn}
-                  className="w-full py-2 bg-[#111827] text-white text-xs font-semibold rounded-lg hover:bg-black transition-colors disabled:opacity-50"
+                  className="w-full py-2 bg-[#111827] text-white text-xs font-semibold rounded-lg hover:bg-black transition-colors disabled:opacity-50 cursor-pointer"
                 >
-                  {isLoggingIn ? 'Verifying...' : 'Verify & Enter Portal'}
+                  {isLoggingIn ? 'Verifying with Supabase...' : 'Verify & Enter Portal'}
                 </button>
               </div>
             </form>

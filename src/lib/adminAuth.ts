@@ -1,66 +1,167 @@
 import { supabaseService } from './supabase';
 
-const ADMIN_AUTH_KEY = 'hs_admin_session_v1';
+export type AuthErrorCode =
+  | 'SUPABASE_NOT_CONFIGURED'
+  | 'ADMIN_EMAIL_NOT_SET'
+  | 'INVALID_CREDENTIALS'
+  | 'EMAIL_NOT_CONFIRMED'
+  | 'NOT_ADMIN'
+  | 'NETWORK'
+  | 'UNKNOWN';
+
+export type AuthResult =
+  | { ok: true }
+  | { ok: false; code: AuthErrorCode; message: string };
 
 export const adminAuth = {
   getAdminEmail(): string {
-    return import.meta.env.VITE_ADMIN_EMAIL?.trim() || '';
+    return (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase().trim();
   },
 
-  getAdminPassphrase(): string {
-    return import.meta.env.VITE_ADMIN_PASSPHRASE || '';
+  isSupabaseConfigured(): boolean {
+    return supabaseService.isConfigured();
   },
 
-  isAuthenticated(): boolean {
+  async getSession() {
+    if (!supabaseService.isConfigured()) return null;
+    const client = supabaseService.getClient();
+    if (!client) return null;
     try {
-      const session = localStorage.getItem(ADMIN_AUTH_KEY);
-      if (!session) return false;
-      const parsed = JSON.parse(session);
-      return Boolean(parsed.email && parsed.token && Date.now() < parsed.expiresAt);
+      const { data } = await client.auth.getSession();
+      const userEmail = (data.session?.user?.email || '').toLowerCase().trim();
+      const adminEmail = this.getAdminEmail();
+      if (userEmail && adminEmail && userEmail === adminEmail) {
+        return data.session;
+      }
+      return null;
     } catch {
-      return false;
+      return null;
     }
   },
 
-  async login(email: string, secret: string): Promise<boolean> {
-    const validEmail = this.getAdminEmail().toLowerCase().trim();
-    const validPassphrase = this.getAdminPassphrase().trim();
-    const inputEmail = (email || '').trim().toLowerCase();
-    const inputSecret = (secret || '').trim();
+  onAuthStateChange(callback: (isAuthenticated: boolean) => void) {
+    const client = supabaseService.getClient();
+    if (!client) {
+      return { unsubscribe: () => {} };
+    }
+    const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      const userEmail = (session?.user?.email || '').toLowerCase().trim();
+      const adminEmail = this.getAdminEmail();
+      const isOwner = Boolean(userEmail && adminEmail && userEmail === adminEmail);
+      callback(isOwner);
+    });
+    return subscription;
+  },
 
-    // Credentials must be defined via build-time env vars (no fallback defaults in code).
-    if (!validEmail || !validPassphrase) {
-      return false;
+  async login(email: string, password: string): Promise<AuthResult> {
+    const adminEmail = this.getAdminEmail();
+    if (!adminEmail) {
+      return {
+        ok: false,
+        code: 'ADMIN_EMAIL_NOT_SET',
+        message: "VITE_ADMIN_EMAIL isn't set. Add it in Vercel and Redeploy.",
+      };
     }
 
-    if (inputEmail === validEmail && inputSecret === validPassphrase) {
-      const session = {
-        email: inputEmail,
-        token: `adm_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
-        expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000, // 30 days
+    if (!supabaseService.isConfigured()) {
+      return {
+        ok: false,
+        code: 'SUPABASE_NOT_CONFIGURED',
+        message: "Supabase isn't configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables, then Redeploy.",
       };
-      try {
-        localStorage.setItem(ADMIN_AUTH_KEY, JSON.stringify(session));
-      } catch {}
+    }
 
-      // Attempt Supabase sign-in if configured, but never block local login
-      if (supabaseService.isConfigured()) {
-        try {
-          await supabaseService.signInAdmin(inputEmail, inputSecret);
-        } catch (_) {}
+    const client = supabaseService.getClient();
+    if (!client) {
+      return {
+        ok: false,
+        code: 'SUPABASE_NOT_CONFIGURED',
+        message: "Supabase isn't configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Vercel → Settings → Environment Variables, then Redeploy.",
+      };
+    }
+
+    const cleanEmail = (email || '').trim().toLowerCase();
+    const cleanPassword = (password || '').trim();
+
+    try {
+      const { data, error } = await client.auth.signInWithPassword({
+        email: cleanEmail,
+        password: cleanPassword,
+      });
+
+      if (error) {
+        const msg = error.message || '';
+        const lower = msg.toLowerCase();
+        if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
+          return {
+            ok: false,
+            code: 'INVALID_CREDENTIALS',
+            message: 'Wrong email or password.',
+          };
+        }
+        if (lower.includes('email not confirmed') || lower.includes('not confirmed')) {
+          return {
+            ok: false,
+            code: 'EMAIL_NOT_CONFIRMED',
+            message: "This Supabase user isn't confirmed. In Supabase → Authentication → Users, confirm the user (or delete and re-create it with 'Auto Confirm User' ticked).",
+          };
+        }
+        if (lower.includes('failed to fetch') || lower.includes('networkerror') || lower.includes('fetch')) {
+          return {
+            ok: false,
+            code: 'NETWORK',
+            message: "Couldn't reach Supabase. Check VITE_SUPABASE_URL.",
+          };
+        }
+        return {
+          ok: false,
+          code: 'UNKNOWN',
+          message: msg || 'An unexpected error occurred during sign-in.',
+        };
       }
 
-      return true;
+      if (!data?.session?.user) {
+        return {
+          ok: false,
+          code: 'INVALID_CREDENTIALS',
+          message: 'Wrong email or password.',
+        };
+      }
+
+      const userEmail = (data.session.user.email || '').toLowerCase().trim();
+      if (userEmail !== adminEmail) {
+        await client.auth.signOut();
+        return {
+          ok: false,
+          code: 'NOT_ADMIN',
+          message: "This account isn't the site owner.",
+        };
+      }
+
+      return { ok: true };
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('network')) {
+        return {
+          ok: false,
+          code: 'NETWORK',
+          message: "Couldn't reach Supabase. Check VITE_SUPABASE_URL.",
+        };
+      }
+      return {
+        ok: false,
+        code: 'UNKNOWN',
+        message: msg || 'An unexpected error occurred during sign-in.',
+      };
     }
-    return false;
   },
 
-  logout(): void {
-    try {
-      localStorage.removeItem(ADMIN_AUTH_KEY);
-    } catch {}
-    if (supabaseService.isConfigured()) {
-      supabaseService.signOutAdmin().catch(() => {});
+  async logout(): Promise<void> {
+    const client = supabaseService.getClient();
+    if (client) {
+      try {
+        await client.auth.signOut();
+      } catch {}
     }
   },
 };

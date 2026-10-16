@@ -17,11 +17,11 @@ export type FieldDiff = {
   newValue: string;
 };
 
-const DRAFT_KEY = 'content_draft';
-const PUBLISHED_KEY = 'content_published';
-const REVISIONS_KEY = 'content_revisions';
+const DRAFT_KEY = 'hs_content_draft';
+const PUBLISHED_KEY = 'hs_content_published_v1';
+const REVISIONS_KEY = 'hs_content_revisions_v1';
 const PREVIEW_KEY = 'hs_preview_mode';
-const RECENTLY_DELETED_KEY = 'hs_recently_deleted';
+const RECENTLY_DELETED_KEY = 'hs_recently_deleted_v1';
 
 export type RecentlyDeletedItem = {
   id: string;
@@ -54,33 +54,62 @@ function deepMerge<T extends Record<string, any>>(target: T, source: any): T {
   return output;
 }
 
+// Safe localStorage setter that intercepts QuotaExceededError and notifies UI
+function safeSetLocalStorage(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value);
+    return true;
+  } catch (e: any) {
+    if (
+      e?.name === 'QuotaExceededError' ||
+      e?.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+      e?.code === 22 ||
+      e?.code === 1014
+    ) {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('hs_storage_toast', {
+            detail: 'Local storage is full — publish to Supabase or clear revision history',
+          })
+        );
+      }
+    }
+    return false;
+  }
+}
+
 export const storage = {
   // Synchronous read of published content (used on initial render, cached in localStorage with seed fallback)
   getPublished(): SiteContent {
     try {
-      const saved = localStorage.getItem(PUBLISHED_KEY);
+      const saved = localStorage.getItem(PUBLISHED_KEY) || localStorage.getItem('content_published');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed && typeof parsed === 'object') {
-          return deepMerge(clone(seedContent as SiteContent), parsed);
+          const merged = deepMerge(clone(seedContent as SiteContent), parsed);
+          const validationResult = SiteContentZodSchema.safeParse(merged);
+          if (validationResult.success) {
+            return merged;
+          }
+          console.warn('Local cached published content failed schema validation, falling back to initial content:', validationResult.error);
         }
       }
-    } catch (e) {
-      console.warn('Storage read of published content failed:', e);
-    }
+    } catch (_) {}
 
     // If published document is not yet saved, check if a draft exists
     try {
-      const draftSaved = localStorage.getItem(DRAFT_KEY);
+      const draftSaved = localStorage.getItem(DRAFT_KEY) || localStorage.getItem('content_draft');
       if (draftSaved) {
         const parsedDraft = JSON.parse(draftSaved);
         if (parsedDraft && typeof parsedDraft === 'object') {
-          return deepMerge(clone(seedContent as SiteContent), parsedDraft);
+          const merged = deepMerge(clone(seedContent as SiteContent), parsedDraft);
+          const validationResult = SiteContentZodSchema.safeParse(merged);
+          if (validationResult.success) {
+            return merged;
+          }
         }
       }
-    } catch (e) {
-      console.warn('Storage read of draft fallback failed:', e);
-    }
+    } catch (_) {}
 
     return clone(seedContent as SiteContent);
   },
@@ -90,12 +119,14 @@ export const storage = {
     if (supabaseService.isConfigured()) {
       try {
         const remote = await supabaseService.fetchPublishedContent();
-        if (remote && typeof remote === 'object') {
+        if (remote && typeof remote === 'object' && Object.keys(remote).length > 0) {
           const merged = deepMerge(clone(seedContent as SiteContent), remote);
-          try {
-            localStorage.setItem(PUBLISHED_KEY, JSON.stringify(merged));
-          } catch {}
-          return merged;
+          const validationResult = SiteContentZodSchema.safeParse(merged);
+          if (validationResult.success) {
+            safeSetLocalStorage(PUBLISHED_KEY, JSON.stringify(merged));
+            return merged;
+          }
+          console.warn('Fetched remote published content failed schema validation, falling back to initial content:', validationResult.error);
         }
       } catch (_) {
         // Fall back to local published cache silently
@@ -107,7 +138,7 @@ export const storage = {
   // Read draft content (used by admin editor)
   getDraft(): SiteContent {
     try {
-      const saved = localStorage.getItem(DRAFT_KEY);
+      const saved = localStorage.getItem(DRAFT_KEY) || localStorage.getItem('content_draft');
       if (saved) {
         const parsed = JSON.parse(saved);
         return deepMerge(clone(seedContent as SiteContent), parsed);
@@ -119,20 +150,16 @@ export const storage = {
 
   // Save in-progress draft
   saveDraft(content: SiteContent): void {
-    try {
-      localStorage.setItem(DRAFT_KEY, JSON.stringify(content));
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('hs_draft_saved', { detail: content }));
-      }
-    } catch (e) {
-      console.warn('Draft save notice:', e);
+    safeSetLocalStorage(DRAFT_KEY, JSON.stringify(content));
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('hs_draft_saved', { detail: content }));
     }
   },
 
   // Get recently deleted items (kept for 30 days)
   getRecentlyDeleted(): RecentlyDeletedItem[] {
     try {
-      const saved = localStorage.getItem(RECENTLY_DELETED_KEY);
+      const saved = localStorage.getItem(RECENTLY_DELETED_KEY) || localStorage.getItem('hs_recently_deleted');
       if (saved) {
         const items: RecentlyDeletedItem[] = JSON.parse(saved);
         const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -143,138 +170,87 @@ export const storage = {
   },
 
   addRecentlyDeleted(itemType: string, label: string, itemData: any): void {
-    try {
-      const current = this.getRecentlyDeleted();
-      const newItem: RecentlyDeletedItem = {
-        id: `del_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        itemType,
-        label,
-        itemData: clone(itemData),
-        deletedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(RECENTLY_DELETED_KEY, JSON.stringify([newItem, ...current]));
-    } catch (e) {
-      console.warn('Recently deleted record notice:', e);
-    }
+    const current = this.getRecentlyDeleted();
+    const newItem: RecentlyDeletedItem = {
+      id: `del_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      itemType,
+      label,
+      itemData: clone(itemData),
+      deletedAt: new Date().toISOString(),
+    };
+    safeSetLocalStorage(RECENTLY_DELETED_KEY, JSON.stringify([newItem, ...current]));
   },
 
   removeRecentlyDeleted(id: string): void {
+    const current = this.getRecentlyDeleted();
+    safeSetLocalStorage(RECENTLY_DELETED_KEY, JSON.stringify(current.filter((c) => c.id !== id)));
+  },
+
+  clearAllRecentlyDeleted(): void {
     try {
-      const current = this.getRecentlyDeleted();
-      localStorage.setItem(RECENTLY_DELETED_KEY, JSON.stringify(current.filter((c) => c.id !== id)));
+      localStorage.removeItem(RECENTLY_DELETED_KEY);
+      localStorage.removeItem('hs_recently_deleted');
     } catch {}
   },
 
-  // Asset usage tracking
-  getAssetUsage(assetPath: string, content: SiteContent): string[] {
-    const usages: string[] = [];
-    if (!assetPath) return usages;
-
-    if (content.hero?.panorama?.file === assetPath) usages.push('Hero Panorama');
-    if (content.hero?.portrait?.file === assetPath) usages.push('Hero Portrait');
-    if (content.hero?.portraitSecondary?.file === assetPath) usages.push('Hero Secondary Frame');
-
-    content.noBigDeal?.polaroids?.forEach((p, i) => {
-      if (p.photo?.file === assetPath) usages.push(`Scrapbook Polaroid #${i + 1}`);
-    });
-
-    content.drafts?.entries?.forEach((e, i) => {
-      if (e.photo?.file === assetPath) usages.push(`Draft Entry #${i + 1}`);
-    });
-
-    content.childhood?.photos?.forEach((c, i) => {
-      if (c.photo?.file === assetPath) usages.push(`Childhood Frame #${i + 1}`);
-    });
-
-    if (content.interludeBeas?.photo?.file === assetPath) usages.push('Beas Silence Photo');
-
-    content.people?.forEach((p) => {
-      if (p.photo?.file === assetPath) usages.push(`Person Node: ${p.name}`);
-    });
-
-    content.lucky?.forEach((l) => {
-      if (l.photo?.file === assetPath) usages.push(`Lucky Word: ${l.word}`);
-    });
-
-    content.proud?.forEach((pr) => {
-      if (pr.photo?.file === assetPath) usages.push(`Proud Milestone: ${pr.title}`);
-    });
-
-    if (content.notYet?.photo?.file === assetPath) usages.push('Not Yet Photo');
-
-    content.dreams?.forEach((d) => {
-      if (d.photo?.file === assetPath) usages.push(`Dream: ${d.place}`);
-    });
-
-    if (content.finale?.photo?.file === assetPath) usages.push('Finale Photo');
-    if (content.audioTrack?.file === assetPath) usages.push('Ambient Audio Track');
-
-    return usages;
+  // Preview mode toggle
+  isPreviewMode(): boolean {
+    try {
+      return localStorage.getItem(PREVIEW_KEY) === 'true';
+    } catch {
+      return false;
+    }
   },
 
-  replaceAssetEverywhere(oldPath: string, newPath: string, content: SiteContent): SiteContent {
-    const copy: SiteContent = clone(content);
-
-    const updateFile = (p: any) => {
-      if (p && p.file === oldPath) p.file = newPath;
-    };
-
-    updateFile(copy.hero?.panorama);
-    updateFile(copy.hero?.portrait);
-    updateFile(copy.hero?.portraitSecondary);
-
-    copy.noBigDeal?.polaroids?.forEach((pol) => updateFile(pol.photo));
-    copy.drafts?.entries?.forEach((entry) => updateFile(entry.photo));
-    copy.childhood?.photos?.forEach((ch) => updateFile(ch.photo));
-    updateFile(copy.interludeBeas?.photo);
-    copy.people?.forEach((person) => updateFile(person.photo));
-    copy.lucky?.forEach((lw) => updateFile(lw.photo));
-    copy.proud?.forEach((pr) => updateFile(pr.photo));
-    updateFile(copy.notYet?.photo);
-    copy.dreams?.forEach((dr) => updateFile(dr.photo));
-    updateFile(copy.finale?.photo);
-    if (copy.audioTrack?.file === oldPath) copy.audioTrack.file = newPath;
-
-    return copy;
+  setPreviewMode(enabled: boolean): void {
+    try {
+      localStorage.setItem(PREVIEW_KEY, String(enabled));
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('hs_preview_mode_changed', { detail: enabled }));
+      }
+    } catch {}
   },
 
-  // Calculate field differences between previous published and current draft
+  // Difference calculator for change auditing
   getDiff(prev: SiteContent, curr: SiteContent): FieldDiff[] {
     const diffs: FieldDiff[] = [];
 
-    const compare = (o1: any, o2: any, path: string) => {
-      if (o1 === o2) return;
-      if (typeof o1 !== typeof o2) {
-        diffs.push({ path, oldValue: String(o1), newValue: String(o2) });
+    const formatVal = (v: any): string => {
+      if (v === null || v === undefined) return '';
+      if (typeof v === 'string') return v;
+      if (typeof v === 'number' || typeof v === 'boolean') return String(v);
+      return JSON.stringify(v);
+    };
+
+    const compare = (a: any, b: any, currentPath: string) => {
+      if (a === b) return;
+
+      if (typeof a !== 'object' || a === null || typeof b !== 'object' || b === null) {
+        diffs.push({
+          path: currentPath,
+          oldValue: formatVal(a),
+          newValue: formatVal(b),
+        });
         return;
       }
-      if (typeof o1 !== 'object' || o1 === null || o2 === null) {
-        diffs.push({ path, oldValue: String(o1), newValue: String(o2) });
+
+      if (Array.isArray(a) || Array.isArray(b)) {
+        if (JSON.stringify(a) !== JSON.stringify(b)) {
+          diffs.push({
+            path: currentPath,
+            oldValue: `${Array.isArray(a) ? a.length : 0} items`,
+            newValue: `${Array.isArray(b) ? b.length : 0} items`,
+          });
+        }
         return;
       }
-      if (Array.isArray(o1) || Array.isArray(o2)) {
-        if (!Array.isArray(o1) || !Array.isArray(o2)) {
-          diffs.push({
-            path,
-            oldValue: Array.isArray(o1) ? `Array(${o1.length})` : String(o1),
-            newValue: Array.isArray(o2) ? `Array(${o2.length})` : String(o2),
-          });
-          return;
-        }
-        if (o1.length !== o2.length) {
-          diffs.push({
-            path: `${path}.length`,
-            oldValue: `${o1.length} items`,
-            newValue: `${o2.length} items`,
-          });
-        }
-        const maxLen = Math.max(o1.length, o2.length);
-        for (let i = 0; i < maxLen; i++) {
-          compare(o1[i], o2[i], `${path}[${i}]`);
-        }
-      } else if (o1 && o2 && typeof o1 === 'object') {
-        const allKeys = Array.from(new Set([...Object.keys(o1), ...Object.keys(o2)]));
-        allKeys.forEach((k) => compare(o1[k], o2[k], path ? `${path}.${k}` : k));
+
+      const allKeys = Array.from(new Set([...Object.keys(a), ...Object.keys(b)]));
+      for (const k of allKeys) {
+        // Skip comparing raw asset data or IDs
+        if (k === 'blurDataURL') continue;
+        const subPath = currentPath ? `${currentPath}.${k}` : k;
+        compare(a[k], b[k], subPath);
       }
     };
 
@@ -301,17 +277,12 @@ export const storage = {
         changesSummary: changesSummary.length > 0 ? changesSummary : ['Minor adjustments'],
       };
 
-      // 1. Commit to local storage and revision history first
+      // 1. Commit to local storage and revision history first (with QuotaExceededError protection)
       const existingRevisions = this.getRevisions();
       const updatedRevisions = [newRevision, ...existingRevisions].slice(0, 50);
-      try {
-        localStorage.setItem(REVISIONS_KEY, JSON.stringify(updatedRevisions));
-      } catch {}
-
-      try {
-        localStorage.setItem(PUBLISHED_KEY, JSON.stringify(content));
-        localStorage.setItem(DRAFT_KEY, JSON.stringify(content));
-      } catch {}
+      safeSetLocalStorage(REVISIONS_KEY, JSON.stringify(updatedRevisions));
+      safeSetLocalStorage(PUBLISHED_KEY, JSON.stringify(content));
+      safeSetLocalStorage(DRAFT_KEY, JSON.stringify(content));
 
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('hs_content_published', { detail: content }));
@@ -349,7 +320,7 @@ export const storage = {
   // Get revision history
   getRevisions(): ContentRevision[] {
     try {
-      const saved = localStorage.getItem(REVISIONS_KEY);
+      const saved = localStorage.getItem(REVISIONS_KEY) || localStorage.getItem('content_revisions');
       if (saved) {
         return JSON.parse(saved);
       }
@@ -372,22 +343,11 @@ export const storage = {
     return null;
   },
 
-  // Preview mode toggle
-  isPreviewMode(): boolean {
+  // Clear revision history
+  clearRevisions(): void {
     try {
-      return localStorage.getItem(PREVIEW_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  },
-
-  setPreviewMode(enabled: boolean): void {
-    try {
-      localStorage.setItem(PREVIEW_KEY, String(enabled));
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('hs_preview_mode_changed', { detail: enabled }));
-        window.dispatchEvent(new CustomEvent('hs_content_updated', { detail: enabled }));
-      }
+      localStorage.removeItem(REVISIONS_KEY);
+      localStorage.removeItem('content_revisions');
     } catch {}
   },
 };

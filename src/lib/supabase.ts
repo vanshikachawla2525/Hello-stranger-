@@ -79,8 +79,7 @@ function recomputeClient(): void {
           detectSessionInUrl: true,
         },
       });
-    } catch (e) {
-      console.warn('Failed to initialize Supabase client:', e);
+    } catch {
       activeClient = null;
       isSupabaseConfigured = false;
     }
@@ -96,6 +95,10 @@ export const supabase = activeClient;
 export const supabaseService = {
   isConfigured(): boolean {
     return isSupabaseConfigured && activeClient !== null;
+  },
+
+  getClient(): SupabaseClient | null {
+    return activeClient;
   },
 
   getProjectUrl(): string {
@@ -154,6 +157,10 @@ export const supabaseService = {
       }
 
       if (data && data.data && typeof data.data === 'object') {
+        // App treats empty object {} as seed row -> use initialContent
+        if (Object.keys(data.data).length === 0) {
+          return null;
+        }
         return data.data as SiteContent;
       }
       return null;
@@ -187,6 +194,14 @@ export const supabaseService = {
 
       if (error) {
         const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        const lower = errorMsg.toLowerCase();
+        if (
+          lower.includes('row-level security') ||
+          lower.includes('violates row-level security policy') ||
+          (typeof error === 'object' && (error as any).code === '42501')
+        ) {
+          return { success: false, error: 'Not signed in as the owner. Log out and log in again.' };
+        }
         if (errorMsg.includes('Failed to fetch') || errorMsg.includes('NetworkError') || errorMsg.includes('fetch')) {
           return {
             success: false,
@@ -199,6 +214,10 @@ export const supabaseService = {
       return { success: true };
     } catch (err: any) {
       const msg = err?.message || 'Remote sync failed';
+      const lower = msg.toLowerCase();
+      if (lower.includes('row-level security') || lower.includes('violates row-level security policy')) {
+        return { success: false, error: 'Not signed in as the owner. Log out and log in again.' };
+      }
       if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
         return {
           success: false,
@@ -236,6 +255,14 @@ export const supabaseService = {
 
       if (error) {
         const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        const lower = errorMsg.toLowerCase();
+        if (
+          lower.includes('row-level security') ||
+          lower.includes('violates row-level security policy') ||
+          (typeof error === 'object' && (error as any).code === '42501')
+        ) {
+          return { url: null, error: 'Not signed in as the owner. Log out and log in again.' };
+        }
         return {
           url: null,
           error: errorMsg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : errorMsg,
@@ -250,6 +277,10 @@ export const supabaseService = {
       return { url: urlData.publicUrl };
     } catch (err: any) {
       const msg = err?.message || 'Storage upload failed';
+      const lower = msg.toLowerCase();
+      if (lower.includes('row-level security') || lower.includes('violates row-level security policy')) {
+        return { url: null, error: 'Not signed in as the owner. Log out and log in again.' };
+      }
       return {
         url: null,
         error: msg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : msg,
@@ -280,6 +311,14 @@ export const supabaseService = {
 
       if (error) {
         const errorMsg = typeof error === 'object' && error.message ? error.message : String(error);
+        const lower = errorMsg.toLowerCase();
+        if (
+          lower.includes('row-level security') ||
+          lower.includes('violates row-level security policy') ||
+          (typeof error === 'object' && (error as any).code === '42501')
+        ) {
+          return { url: null, error: 'Not signed in as the owner. Log out and log in again.' };
+        }
         return {
           url: null,
           error: errorMsg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : errorMsg,
@@ -290,6 +329,10 @@ export const supabaseService = {
       return { url: urlData?.publicUrl || null };
     } catch (err: any) {
       const msg = err?.message || 'Audio upload failed';
+      const lower = msg.toLowerCase();
+      if (lower.includes('row-level security') || lower.includes('violates row-level security policy')) {
+        return { url: null, error: 'Not signed in as the owner. Log out and log in again.' };
+      }
       return {
         url: null,
         error: msg.includes('Failed to fetch') ? 'Network error: could not connect to Supabase Storage' : msg,
@@ -300,32 +343,18 @@ export const supabaseService = {
   // Authenticate admin session with Supabase Auth so RLS allows authenticated writes
   async signInAdmin(
     email: string,
-    passphrase: string
+    password: string
   ): Promise<{ success: boolean; error?: string }> {
     if (!activeClient || !this.isConfigured()) return { success: false, error: 'Supabase not configured' };
 
     try {
       const { data, error } = await activeClient.auth.signInWithPassword({
         email,
-        password: passphrase,
+        password,
       });
 
       if (!error && data?.session) {
         return { success: true };
-      }
-
-      if (
-        error?.message?.toLowerCase().includes('invalid login credentials') ||
-        error?.message?.toLowerCase().includes('user not found')
-      ) {
-        const { data: signUpData, error: signUpErr } = await activeClient.auth.signUp({
-          email,
-          password: passphrase,
-        });
-
-        if (!signUpErr && signUpData?.session) {
-          return { success: true };
-        }
       }
 
       return { success: false, error: error?.message || 'Supabase authentication failed' };
