@@ -13,6 +13,8 @@ export type AuthResult =
   | { ok: true }
   | { ok: false; code: AuthErrorCode; message: string };
 
+let _cachedIsAuth = false;
+
 export const adminAuth = {
   getAdminEmail(): string {
     return (import.meta.env.VITE_ADMIN_EMAIL || '').toLowerCase().trim();
@@ -22,19 +24,32 @@ export const adminAuth = {
     return supabaseService.isConfigured();
   },
 
+  isAuthenticated(): boolean {
+    return _cachedIsAuth;
+  },
+
   async getSession() {
-    if (!supabaseService.isConfigured()) return null;
+    if (!supabaseService.isConfigured()) {
+      _cachedIsAuth = false;
+      return null;
+    }
     const client = supabaseService.getClient();
-    if (!client) return null;
+    if (!client) {
+      _cachedIsAuth = false;
+      return null;
+    }
     try {
       const { data } = await client.auth.getSession();
       const userEmail = (data.session?.user?.email || '').toLowerCase().trim();
       const adminEmail = this.getAdminEmail();
       if (userEmail && adminEmail && userEmail === adminEmail) {
+        _cachedIsAuth = true;
         return data.session;
       }
+      _cachedIsAuth = false;
       return null;
     } catch {
+      _cachedIsAuth = false;
       return null;
     }
   },
@@ -42,12 +57,14 @@ export const adminAuth = {
   onAuthStateChange(callback: (isAuthenticated: boolean) => void) {
     const client = supabaseService.getClient();
     if (!client) {
+      _cachedIsAuth = false;
       return { unsubscribe: () => {} };
     }
     const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
       const userEmail = (session?.user?.email || '').toLowerCase().trim();
       const adminEmail = this.getAdminEmail();
       const isOwner = Boolean(userEmail && adminEmail && userEmail === adminEmail);
+      _cachedIsAuth = isOwner;
       callback(isOwner);
     });
     return subscription;
@@ -56,6 +73,7 @@ export const adminAuth = {
   async login(email: string, password: string): Promise<AuthResult> {
     const adminEmail = this.getAdminEmail();
     if (!adminEmail) {
+      _cachedIsAuth = false;
       return {
         ok: false,
         code: 'ADMIN_EMAIL_NOT_SET',
@@ -64,6 +82,7 @@ export const adminAuth = {
     }
 
     if (!supabaseService.isConfigured()) {
+      _cachedIsAuth = false;
       return {
         ok: false,
         code: 'SUPABASE_NOT_CONFIGURED',
@@ -73,6 +92,7 @@ export const adminAuth = {
 
     const client = supabaseService.getClient();
     if (!client) {
+      _cachedIsAuth = false;
       return {
         ok: false,
         code: 'SUPABASE_NOT_CONFIGURED',
@@ -90,6 +110,7 @@ export const adminAuth = {
       });
 
       if (error) {
+        _cachedIsAuth = false;
         const msg = error.message || '';
         const lower = msg.toLowerCase();
         if (lower.includes('invalid login credentials') || lower.includes('invalid credentials')) {
@@ -121,6 +142,7 @@ export const adminAuth = {
       }
 
       if (!data?.session?.user) {
+        _cachedIsAuth = false;
         return {
           ok: false,
           code: 'INVALID_CREDENTIALS',
@@ -130,6 +152,7 @@ export const adminAuth = {
 
       const userEmail = (data.session.user.email || '').toLowerCase().trim();
       if (userEmail !== adminEmail) {
+        _cachedIsAuth = false;
         await client.auth.signOut();
         return {
           ok: false,
@@ -138,8 +161,10 @@ export const adminAuth = {
         };
       }
 
+      _cachedIsAuth = true;
       return { ok: true };
     } catch (err: any) {
+      _cachedIsAuth = false;
       const msg = err?.message || String(err);
       if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('network')) {
         return {
@@ -157,6 +182,7 @@ export const adminAuth = {
   },
 
   async logout(): Promise<void> {
+    _cachedIsAuth = false;
     const client = supabaseService.getClient();
     if (client) {
       try {

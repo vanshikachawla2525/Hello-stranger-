@@ -350,4 +350,50 @@ export const storage = {
       localStorage.removeItem('content_revisions');
     } catch {}
   },
+
+  // Calculate where a given image is used across the site
+  getAssetUsage(fileUrl: string, content: SiteContent): string[] {
+    const usages: string[] = [];
+    if (!fileUrl) return usages;
+
+    if (content.hero?.panorama?.file === fileUrl) usages.push('Hero Panorama');
+    if (content.hero?.portrait?.file === fileUrl) usages.push('Hero Portrait');
+    if (content.hero?.portraitSecondary?.file === fileUrl) usages.push('Hero Secondary Frame');
+
+    content.noBigDeal?.polaroids?.forEach((p, idx) => {
+      if (p.photo?.file === fileUrl) usages.push(`Polaroid #${idx + 1}`);
+    });
+
+    content.drafts?.entries?.forEach((d, idx) => {
+      if (d.photo?.file === fileUrl) usages.push(`Draft Entry #${idx + 1}`);
+    });
+
+    content.childhood?.photos?.forEach((c, idx) => {
+      if (c.photo?.file === fileUrl) usages.push(`Childhood Photo #${idx + 1}`);
+    });
+
+    if (content.interludeBeas?.photo?.file === fileUrl) usages.push('Beas Interlude');
+
+    content.people?.forEach((p) => {
+      if (p.photo?.file === fileUrl) usages.push(`Constellation: ${p.name}`);
+    });
+
+    content.lucky?.forEach((l) => {
+      if (l.photo?.file === fileUrl) usages.push(`Lucky: ${l.word}`);
+    });
+
+    content.proud?.forEach((pr) => {
+      if (pr.photo?.file === fileUrl) usages.push(`Proud: ${pr.title}`);
+    });
+
+    if (content.notYet?.photo?.file === fileUrl) usages.push('Not Yet Photo');
+
+    content.dreams?.forEach((dr) => {
+      if (dr.photo?.file === fileUrl) usages.push(`Dream: ${dr.place}`);
+    });
+
+    if (content.finale?.photo?.file === fileUrl) usages.push('Finale Photo');
+
+    return usages;
+  },
 };

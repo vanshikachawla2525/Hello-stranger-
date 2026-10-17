@@ -5,13 +5,6 @@ import { Sliders, Volume2, VolumeX, Sparkles } from 'lucide-react';
 
 export const TopBar: React.FC<{ onOpenExplore: () => void }> = ({ onOpenExplore }) => {
   const { content, activeTheme } = useContent();
-  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(() => adminAuth.isAuthenticated());
-
-  useEffect(() => {
-    const checkAuth = () => setIsAdminAuthenticated(adminAuth.isAuthenticated());
-    window.addEventListener('storage', checkAuth);
-    return () => window.removeEventListener('storage', checkAuth);
-  }, []);
 
   const isDark = ['beas', 'orbit', 'proud', 'observatory', 'letters'].includes(activeTheme);
 
