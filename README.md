@@ -45,3 +45,4 @@ An autobiographical memory archive and digital diary with a real-time owner admi
 | **Couldn't reach Supabase.** | Network error or invalid `VITE_SUPABASE_URL`. | Check `VITE_SUPABASE_URL` and ensure project is active. |
 | **Not signed in as the owner. Log out and log in again.** | Supabase JWT expired or Row-Level Security policy blocked write. | Log out from the portal and log in again with the owner email. |
 | **Local storage is full — publish to Supabase or clear revision history.** | Browser localStorage quota exceeded. | Publish changes to Supabase or clear revision history in the dashboard to free space. |
+Website deployment update
